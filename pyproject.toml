@@ -1,0 +1,6 @@
+[project]
+name = "vidsense"
+version = "0.1.0"
+description = "VidSense: smart and efficient intelligent consumption of YouTube videos"
+requires-python = ">=3.12.10"
+dependencies = []
