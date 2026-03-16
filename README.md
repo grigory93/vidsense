@@ -10,8 +10,10 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management and
 # Create virtual environment and install dependencies
 uv sync
 
-# Run the application
+# Run the application (either command works)
 uv run python main.py
+# Or with auto-reload for development:
+uv run uvicorn main:app --reload
 ```
 
 ## Development
@@ -20,8 +22,8 @@ uv run python main.py
 # Add a dependency
 uv add <package>
 
-# Run with uv
-uv run python main.py
+# Run with auto-reload (recommended for development)
+uv run uvicorn main:app --reload
 ```
 
 ## License

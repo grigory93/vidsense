@@ -1,0 +1,126 @@
+{% if is_partial and error_message %}
+<!-- Partial result warning -->
+<div class="mb-5 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
+  <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+  </svg>
+  <div>
+    <strong>Partial results available.</strong>
+    <p class="mt-0.5">{{ error_message }}</p>
+  </div>
+</div>
+{% endif %}
+
+<!-- Layered Summaries -->
+{% if has_summaries %}
+<div class="mb-8" x-data="{ activeTab: 'thesis' }">
+  <h2 class="text-xl font-bold text-slate-900 mb-4">Summary</h2>
+
+  <!-- Tab nav -->
+  <div class="flex gap-1 bg-slate-100 rounded-lg p-1 mb-5 w-fit">
+    <button
+      @click="activeTab = 'thesis'"
+      :class="activeTab === 'thesis' ? 'bg-white shadow-sm text-brand-700 font-semibold' : 'text-slate-500 hover:text-slate-700'"
+      class="px-4 py-1.5 rounded-md text-sm transition-all"
+    >Quick Take</button>
+    <button
+      @click="activeTab = 'executive'"
+      :class="activeTab === 'executive' ? 'bg-white shadow-sm text-brand-700 font-semibold' : 'text-slate-500 hover:text-slate-700'"
+      class="px-4 py-1.5 rounded-md text-sm transition-all"
+    >Executive</button>
+    <button
+      @click="activeTab = 'detailed'"
+      :class="activeTab === 'detailed' ? 'bg-white shadow-sm text-brand-700 font-semibold' : 'text-slate-500 hover:text-slate-700'"
+      class="px-4 py-1.5 rounded-md text-sm transition-all"
+    >Detailed Outline</button>
+  </div>
+
+  <!-- Thesis tab -->
+  <div x-show="activeTab === 'thesis'" class="prose prose-slate max-w-none">
+    {% if summaries.thesis %}
+    <p class="text-base leading-relaxed text-slate-700 bg-brand-50 border-l-4 border-brand-400 pl-4 py-2 rounded-r-lg">
+      {{ summaries.thesis.content_text }}
+    </p>
+    {% else %}
+    <p class="text-slate-400 italic">Quick Take summary not available.</p>
+    {% endif %}
+  </div>
+
+  <!-- Executive tab -->
+  <div x-show="activeTab === 'executive'" x-cloak>
+    {% if summaries.executive %}
+    <div class="prose prose-slate max-w-none">
+      {% for para in summaries.executive.content_text.split('\n\n') %}
+      {% if para.strip() %}
+      <p class="text-slate-700 leading-relaxed mb-3">{{ para }}</p>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-slate-400 italic">Executive summary not available.</p>
+    {% endif %}
+  </div>
+
+  <!-- Detailed outline tab -->
+  <div x-show="activeTab === 'detailed'" x-cloak>
+    {% if summaries.detailed %}
+    <ul class="space-y-2">
+      {% if summaries.detailed.content_json %}
+        {% for point in summaries.detailed.content_json %}
+        <li class="flex items-start gap-2 text-slate-700 text-sm leading-relaxed">
+          <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-brand-400 flex-shrink-0"></span>
+          <span>{{ point }}</span>
+        </li>
+        {% endfor %}
+      {% else %}
+        {% for line in summaries.detailed.content_text.split('\n') %}
+        {% if line.strip() %}
+        <li class="flex items-start gap-2 text-slate-700 text-sm leading-relaxed">
+          <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-brand-400 flex-shrink-0"></span>
+          <span>{{ line.lstrip('•-* ') }}</span>
+        </li>
+        {% endif %}
+        {% endfor %}
+      {% endif %}
+    </ul>
+    {% else %}
+    <p class="text-slate-400 italic">Detailed outline not available.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Smart Chapters -->
+{% if has_chapters %}
+<div id="chapters-section">
+  <h2 class="text-xl font-bold text-slate-900 mb-4">
+    Chapters
+    <span class="ml-2 text-sm font-normal text-slate-400">({{ chapters | length }})</span>
+  </h2>
+
+  <div class="space-y-3" id="chapter-list">
+    {% for chapter in chapters %}
+    {% include "partials/chapter_card.html" %}
+    {% endfor %}
+  </div>
+</div>
+{% elif not has_summaries %}
+<!-- Neither available -->
+<div class="text-center py-12 text-slate-400">
+  <p>No results available.</p>
+</div>
+{% endif %}
+
+{% if not has_chapters and has_summaries %}
+<div class="mt-4 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+  <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+  </svg>
+  Chapter extraction was not completed. Try regenerating.
+</div>
+{% endif %}
+
+<script>
+  // Signal to HTMX polling that processing is done — stops the poll
+  window.__vsProcessingComplete = true;
+</script>

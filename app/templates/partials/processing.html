@@ -1,0 +1,78 @@
+<div class="flex flex-col items-center justify-center py-20 text-slate-500"
+     x-data="processingTimer('{{ run.created_at.isoformat() if run.created_at else '' }}')"
+     x-init="start()">
+
+  <!-- Spinner -->
+  <div class="relative mb-5">
+    <div class="w-14 h-14 rounded-full border-4 border-brand-100"></div>
+    <div class="w-14 h-14 rounded-full border-4 border-brand-500 border-t-transparent animate-spin absolute inset-0"></div>
+  </div>
+
+  <!-- Step label -->
+  <p class="text-base font-medium text-slate-700">
+    {% if run.current_step == 'generating' %}
+      Generating summaries &amp; chapters…
+    {% elif run.current_step == 'persisting' %}
+      Saving results…
+    {% else %}
+      Analyzing video…
+    {% endif %}
+  </p>
+
+  <!-- Step progress dots -->
+  <div class="flex items-center gap-2 mt-3">
+    <span class="flex items-center gap-1.5 text-xs
+        {% if run.current_step in ('generating', 'persisting') %}text-brand-600 font-semibold{% else %}text-slate-400{% endif %}">
+      <span class="w-2 h-2 rounded-full
+          {% if run.current_step in ('generating', 'persisting') %}bg-brand-500{% else %}bg-slate-300{% endif %}"></span>
+      Validated
+    </span>
+    <span class="w-4 h-px bg-slate-200"></span>
+    <span class="flex items-center gap-1.5 text-xs
+        {% if run.current_step == 'generating' %}text-brand-600 font-semibold animate-pulse{% elif run.current_step == 'persisting' %}text-brand-600 font-semibold{% else %}text-slate-400{% endif %}">
+      <span class="w-2 h-2 rounded-full
+          {% if run.current_step in ('generating', 'persisting') %}bg-brand-500{% else %}bg-slate-300{% endif %}"></span>
+      Generating
+    </span>
+    <span class="w-4 h-px bg-slate-200"></span>
+    <span class="flex items-center gap-1.5 text-xs
+        {% if run.current_step == 'persisting' %}text-brand-600 font-semibold animate-pulse{% else %}text-slate-400{% endif %}">
+      <span class="w-2 h-2 rounded-full
+          {% if run.current_step == 'persisting' %}bg-brand-500{% else %}bg-slate-300{% endif %}"></span>
+      Saving
+    </span>
+  </div>
+
+  <!-- Elapsed time -->
+  <p class="text-sm text-slate-400 mt-3" x-text="elapsedLabel"></p>
+
+  <!-- "Taking longer than expected" nudge after 3 minutes -->
+  <p x-show="elapsedSec > 180" x-cloak
+     class="mt-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
+    This is taking longer than usual — still working on it.
+  </p>
+</div>
+
+<script>
+function processingTimer(createdAtIso) {
+  return {
+    elapsedSec: 0,
+    elapsedLabel: '',
+    _interval: null,
+
+    start() {
+      const base = createdAtIso ? new Date(createdAtIso) : new Date();
+      const update = () => {
+        this.elapsedSec = Math.floor((Date.now() - base.getTime()) / 1000);
+        const m = Math.floor(this.elapsedSec / 60);
+        const s = this.elapsedSec % 60;
+        this.elapsedLabel = m > 0
+          ? `${m}m ${s}s elapsed`
+          : `${s}s elapsed`;
+      };
+      update();
+      this._interval = setInterval(update, 1000);
+    },
+  };
+}
+</script>

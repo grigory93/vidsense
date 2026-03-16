@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}{% if video.title %}{{ video.title }} — {% endif %}VidSense{% endblock %}
+
+{% block head %}
+<!-- YouTube IFrame API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+{% endblock %}
+
+{% block main_class %}{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-[calc(100vh-3.5rem)]" x-data="videoPage({{ video.id }}, '{{ video.youtube_id }}', {{ run.id if run else 'null' }})">
+
+  <!-- Top bar: video title + regenerate widget -->
+  <div class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center gap-3 shrink-0">
+    <div class="flex-1 min-w-0">
+      <h1 class="font-semibold text-slate-900 truncate text-base">
+        {{ video.title or 'Untitled Video' }}
+      </h1>
+      {% if video.duration_sec %}
+      <p class="text-xs text-slate-400 mt-0.5">{{ (video.duration_sec // 60) }}:{{ '%02d' % (video.duration_sec % 60) }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Regenerate form -->
+    <form @submit.prevent="regenerate()" class="flex items-center gap-2 shrink-0">
+      <input
+        x-model="focusPrompt"
+        type="text"
+        placeholder="Focus prompt (optional)"
+        class="text-sm px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 w-56"
+      />
+      <button
+        type="submit"
+        :disabled="regenerating"
+        class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500"
+      >
+        <svg x-show="regenerating" class="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <svg x-show="!regenerating" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        Regenerate
+      </button>
+    </form>
+  </div>
+
+  <!-- Main 2-col layout: left = player + content, right = chapters -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Left column -->
+    <div class="flex flex-col flex-1 overflow-y-auto min-w-0">
+
+      <!-- YouTube Player -->
+      <div class="bg-black shrink-0">
+        <div class="max-w-4xl mx-auto w-full aspect-video">
+          <div id="yt-player" class="w-full h-full" data-youtube-id="{{ video.youtube_id }}"></div>
+        </div>
+      </div>
+      <script>window.__vsYoutubeId = "{{ video.youtube_id }}";</script>
+
+      <!-- Quality warning banner (shown if auto-generated transcript) -->
+      {% if quality_warning %}
+      <div class="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-sm text-amber-800 flex items-center gap-2">
+        <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+        </svg>
+        <span>The transcript for this video was auto-generated. Summary and chapter quality may be reduced.</span>
+      </div>
+      {% endif %}
+
+      <!-- Content area (polled by HTMX) -->
+      <div class="flex-1 px-4 sm:px-6 py-6 max-w-4xl mx-auto w-full">
+
+        <!-- HTMX polling region -->
+        <div
+          id="content-area"
+          hx-get="/partials/video/{{ video.id }}/status{% if run %}?run_id={{ run.id }}{% endif %}"
+          hx-trigger="load, every 3s [!window.__vsProcessingComplete]"
+          hx-swap="innerHTML"
+        >
+          <!-- Loading placeholder while HTMX fires -->
+          {% include "partials/processing.html" %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/player.js"></script>
+<script>
+function videoPage(videoId, youtubeId, runId) {
+  return {
+    videoId,
+    youtubeId,
+    runId,
+    focusPrompt: '',
+    regenerating: false,
+
+    async regenerate() {
+      if (this.regenerating) return;
+      this.regenerating = true;
+      window.__vsProcessingComplete = false;
+      try {
+        const resp = await fetch(`/api/video/${this.videoId}/regenerate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ focus_prompt: this.focusPrompt.trim() || null }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json();
+          alert(d.detail?.message || 'Regeneration failed. Please try again.');
+          return;
+        }
+        const data = await resp.json();
+        this.runId = data.run_id;
+
+        // Update the HTMX polling URL to target the new run
+        const contentArea = document.getElementById('content-area');
+        if (contentArea) {
+          contentArea.setAttribute(
+            'hx-get',
+            `/partials/video/${this.videoId}/status?run_id=${this.runId}`
+          );
+          contentArea.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-20 text-slate-500">
+              <div class="relative mb-5">
+                <div class="w-14 h-14 rounded-full border-4 border-brand-100"></div>
+                <div class="w-14 h-14 rounded-full border-4 border-brand-500 border-t-transparent animate-spin absolute inset-0"></div>
+              </div>
+              <p class="text-base font-medium text-slate-700">Regenerating…</p>
+              <p class="text-sm text-slate-400 mt-1.5">Reusing cached transcript — this will be faster.</p>
+            </div>`;
+          window.__vsProcessingComplete = false;
+          htmx.process(contentArea);
+        }
+      } finally {
+        this.regenerating = false;
+      }
+    }
+  };
+}
+</script>
+{% endblock %}

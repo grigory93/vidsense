@@ -1,0 +1,34 @@
+"""
+LangGraph state type definition for the VidSense pipeline.
+
+LangGraph calls get_type_hints() on the state schema at compile time,
+so all type annotations must be resolvable at runtime. We use Any for
+external types that would create circular imports if imported directly.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from typing_extensions import TypedDict
+
+
+class GraphState(TypedDict, total=False):
+    # Inputs (typed as Any to avoid runtime annotation resolution issues with LangGraph)
+    llm: Any          # BaseChatModel
+    session: Any      # AsyncSession
+    run: Any          # AnalysisRun
+    transcript_source: Any  # TranscriptSource
+    focus_prompt: Any  # str | None
+
+    # Intermediate results
+    summary_result: Any    # SummarySchema | None
+    summary_error: Any     # str | None
+    chapters_result: Any   # ChapterListSchema | None
+    chapters_error: Any    # str | None
+
+    # Control flow
+    pipeline_failed: bool
+    errors: list
+
+    # Output
+    final_status: Any
