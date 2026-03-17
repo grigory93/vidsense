@@ -2,67 +2,90 @@
   'INVALID_URL': {
     'icon': 'link',
     'title': 'Invalid URL',
+    'hint': 'Only public YouTube URLs (youtube.com or youtu.be) are supported.',
     'color': 'red',
+    'recoverable': false,
   },
   'VIDEO_TOO_LONG': {
     'icon': 'clock',
     'title': 'Video Too Long',
+    'hint': 'VidSense supports videos up to 90 minutes. Try a shorter video.',
     'color': 'amber',
+    'recoverable': false,
   },
   'UNSUPPORTED_LANGUAGE': {
     'icon': 'globe',
     'title': 'Unsupported Language',
+    'hint': 'Currently only English captions are supported.',
     'color': 'amber',
+    'recoverable': false,
   },
   'TRANSCRIPTS_DISABLED': {
     'icon': 'ban',
     'title': 'No Transcript Available',
+    'hint': 'This video has no captions. VidSense requires an English transcript to function.',
     'color': 'red',
+    'recoverable': false,
   },
   'NO_TRANSCRIPT': {
     'icon': 'ban',
     'title': 'No Transcript Available',
+    'hint': 'This video has no captions. VidSense requires an English transcript to function.',
     'color': 'red',
+    'recoverable': false,
   },
   'METADATA_FETCH_FAILED': {
     'icon': 'exclamation',
     'title': 'Could Not Fetch Video',
+    'hint': 'The video may be private, age-gated, or unavailable in your region.',
     'color': 'red',
+    'recoverable': false,
   },
   'PIPELINE_FAILED': {
     'icon': 'exclamation',
     'title': 'Processing Failed',
+    'hint': 'Something went wrong during analysis. You can try again — your transcript is cached.',
     'color': 'red',
+    'recoverable': true,
   },
   'NOT_FOUND': {
     'icon': 'search',
     'title': 'Not Found',
+    'hint': 'This analysis run could not be found. It may have been deleted.',
     'color': 'slate',
+    'recoverable': false,
   },
   'RATE_LIMIT': {
     'icon': 'clock',
-    'title': 'Temporarily Unavailable',
+    'title': 'Service Temporarily Unavailable',
+    'hint': 'We have hit a rate limit. Please wait a moment and try again.',
     'color': 'amber',
+    'recoverable': true,
   },
   'VIDEO_UNAVAILABLE': {
     'icon': 'lock',
     'title': 'Video Unavailable',
+    'hint': 'This video is private, removed, or otherwise inaccessible.',
     'color': 'red',
+    'recoverable': false,
   },
 } %}
 
-{% set cfg = error_configs.get(error_code, {'icon': 'exclamation', 'title': 'Error', 'color': 'red'}) %}
-{% set c = cfg.color %}
+{% set cfg    = error_configs.get(error_code, {'icon': 'exclamation', 'title': 'Something Went Wrong', 'hint': '', 'color': 'red', 'recoverable': false}) %}
+{% set c      = cfg.color %}
+{% set is_rec = recoverable if recoverable is defined else cfg.recoverable %}
 
 {% set color_map = {
-  'red':   {'bg': 'bg-red-50',   'border': 'border-red-200',   'text': 'text-red-700',   'icon_bg': 'bg-red-100',   'icon_text': 'text-red-600'},
-  'amber': {'bg': 'bg-amber-50', 'border': 'border-amber-200', 'text': 'text-amber-800', 'icon_bg': 'bg-amber-100', 'icon_text': 'text-amber-600'},
-  'slate': {'bg': 'bg-slate-50', 'border': 'border-slate-200', 'text': 'text-slate-600', 'icon_bg': 'bg-slate-100', 'icon_text': 'text-slate-500'},
+  'red':   {'icon_bg': 'bg-red-100',   'icon_text': 'text-red-500',   'msg_text': 'text-red-700'},
+  'amber': {'icon_bg': 'bg-amber-100', 'icon_text': 'text-amber-500', 'msg_text': 'text-amber-800'},
+  'slate': {'icon_bg': 'bg-slate-100', 'icon_text': 'text-slate-400', 'msg_text': 'text-slate-600'},
 } %}
 {% set colors = color_map.get(c, color_map['red']) %}
 
 <div class="flex flex-col items-center justify-center py-16 px-4 text-center max-w-md mx-auto">
-  <div class="w-14 h-14 rounded-full {{ colors.icon_bg }} flex items-center justify-center mb-5">
+
+  <!-- Icon -->
+  <div class="w-14 h-14 rounded-full {{ colors.icon_bg }} flex items-center justify-center mb-5 shrink-0">
     <svg class="w-7 h-7 {{ colors.icon_text }}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       {% if cfg.icon == 'clock' %}
       <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -74,36 +97,51 @@
       <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
       {% elif cfg.icon == 'link' %}
       <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      {% elif cfg.icon == 'search' %}
+      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
       {% else %}
       <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
       {% endif %}
     </svg>
   </div>
 
+  <!-- Title -->
   <h2 class="text-lg font-bold text-slate-900 mb-2">{{ cfg.title }}</h2>
 
-  <p class="{{ colors.text }} text-sm leading-relaxed mb-6">{{ message }}</p>
+  <!-- Main message (from route context) -->
+  {% if message %}
+  <p class="{{ colors.msg_text }} text-sm leading-relaxed mb-2">{{ message }}</p>
+  {% endif %}
 
-  {% if recoverable %}
-  <div class="flex gap-3">
-    <a href="/" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+  <!-- Actionable hint -->
+  {% if cfg.hint %}
+  <p class="text-slate-400 text-xs leading-relaxed mb-6 max-w-xs">{{ cfg.hint }}</p>
+  {% else %}
+  <div class="mb-6"></div>
+  {% endif %}
+
+  <!-- CTAs -->
+  <div class="flex flex-wrap justify-center gap-3">
+    <a href="/" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
       Try Another Video
     </a>
-    {% if video_id %}
+
+    {% if is_rec and video_id %}
     <button
       onclick="window.location.reload()"
-      class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-    >Retry</button>
+      class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+    >
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      Retry
+    </button>
     {% endif %}
   </div>
-  {% else %}
-  <a href="/" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-    </svg>
-    Back to Home
-  </a>
-  {% endif %}
+
 </div>
 
 <script>

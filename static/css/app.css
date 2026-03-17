@@ -11,32 +11,213 @@
   height: 100%;
 }
 
-/* Prose overrides for summary content */
+/* ============================================================
+   Animations
+   ============================================================ */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes toastFadeOut {
+  to { opacity: 0; transform: translateY(6px); }
+}
+
+.vs-fade-in {
+  animation: fadeInUp 0.3s ease both;
+}
+
+.vs-entrance {
+  animation: fadeInUp 0.45s ease both;
+}
+.vs-entrance-delay-1 { animation-delay: 0.08s; }
+.vs-entrance-delay-2 { animation-delay: 0.18s; }
+.vs-entrance-delay-3 { animation-delay: 0.30s; }
+
+/* Staggered chapter entrance */
+.chapter-card:nth-child(1)   { animation: fadeInUp 0.28s ease 0.04s both; }
+.chapter-card:nth-child(2)   { animation: fadeInUp 0.28s ease 0.09s both; }
+.chapter-card:nth-child(3)   { animation: fadeInUp 0.28s ease 0.14s both; }
+.chapter-card:nth-child(4)   { animation: fadeInUp 0.28s ease 0.19s both; }
+.chapter-card:nth-child(5)   { animation: fadeInUp 0.28s ease 0.24s both; }
+.chapter-card:nth-child(6)   { animation: fadeInUp 0.28s ease 0.29s both; }
+.chapter-card:nth-child(7)   { animation: fadeInUp 0.28s ease 0.34s both; }
+.chapter-card:nth-child(8)   { animation: fadeInUp 0.28s ease 0.39s both; }
+.chapter-card:nth-child(n+9) { animation: fadeInUp 0.28s ease 0.44s both; }
+
+/* ============================================================
+   Skeleton loading
+   ============================================================ */
+
+.skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* ============================================================
+   Toast notifications
+   ============================================================ */
+
+#vs-toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+  align-items: center;
+}
+
+.vs-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  pointer-events: auto;
+  animation: fadeInUp 0.22s ease both;
+  white-space: nowrap;
+}
+
+.vs-toast-success { background: #0f172a; color: #f8fafc; }
+.vs-toast-error   { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+.vs-toast-info    { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+/* ============================================================
+   Chapter cards
+   ============================================================ */
+
+.chapter-card {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.chapter-card:hover {
+  box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+}
+
+.chapter-card.is-active-chapter {
+  border-left: 3px solid #0284c7 !important;
+  background-color: #f0f9ff;
+}
+
+/* "Now Playing" badge only visible when card is active */
+.chapter-card.is-active-chapter .is-active-chapter-badge {
+  display: inline-flex !important;
+}
+
+/* ============================================================
+   Summary depth selector cards
+   ============================================================ */
+
+.summary-depth-card {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  cursor: pointer;
+}
+
+.summary-depth-card:hover {
+  border-color: #7dd3fc;
+}
+
+.summary-depth-card.is-active {
+  border-color: #0284c7;
+  background-color: #f0f9ff;
+  box-shadow: 0 0 0 2px #bae6fd;
+}
+
+/* ============================================================
+   Mini timeline bar
+   ============================================================ */
+
+.vs-timeline {
+  height: 6px;
+  border-radius: 9999px;
+  background: #e2e8f0;
+  position: relative;
+  overflow: visible;
+}
+
+.vs-timeline-segment {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: filter 0.12s ease, transform 0.1s ease;
+  transform-origin: center bottom;
+}
+
+.vs-timeline-segment:hover {
+  filter: brightness(0.8);
+  transform: scaleY(1.6);
+  z-index: 1;
+}
+
+.vs-timeline-segment.is-active-segment {
+  filter: brightness(0.75);
+}
+
+/* ============================================================
+   Content panel and scrollbars
+   ============================================================ */
+
+.vs-content-panel {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.vs-content-panel::-webkit-scrollbar {
+  width: 4px;
+}
+
+.vs-content-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vs-content-panel::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
+
+#vs-player-panel {
+  scrollbar-width: thin;
+  scrollbar-color: #e2e8f0 transparent;
+}
+
+/* ============================================================
+   Prose overrides for summary content
+   ============================================================ */
+
 .prose p {
   margin-bottom: 0.75rem;
   line-height: 1.7;
 }
 
-/* Smooth chapter card transitions */
-.chapter-card {
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-}
+/* ============================================================
+   Reduced motion
+   ============================================================ */
 
-/* Scrollbar styling for the chapter list */
-#chapter-list {
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
-}
-
-#chapter-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-#chapter-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-#chapter-list::-webkit-scrollbar-thumb {
-  background-color: #cbd5e1;
-  border-radius: 4px;
+@media (prefers-reduced-motion: reduce) {
+  .vs-fade-in,
+  .vs-entrance,
+  .chapter-card,
+  .skeleton,
+  .vs-toast,
+  .vs-timeline-segment {
+    animation: none !important;
+    transition: none !important;
+  }
 }

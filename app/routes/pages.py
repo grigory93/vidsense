@@ -78,6 +78,7 @@ async def video_page(
             "video": video,
             "run": run,
             "quality_warning": bool(qw),
+            "initial_focus_prompt": run.focus_prompt if run else None,
         },
     )
 
@@ -115,6 +116,10 @@ async def partial_status(
         )
     run = run_result.scalar_one_or_none()
 
+    # Load video for templates that need duration / metadata
+    video_result = await session.execute(select(Video).where(Video.id == video_id))
+    video = video_result.scalar_one_or_none()
+
     if not run:
         return templates.TemplateResponse(
             request,
@@ -126,7 +131,7 @@ async def partial_status(
         return templates.TemplateResponse(
             request,
             "partials/processing.html",
-            {"run": run, "video_id": video_id},
+            {"run": run, "video_id": video_id, "video": video},
         )
 
     if run.status == AnalysisRunStatus.failed:
@@ -194,6 +199,7 @@ async def partial_status(
         "partials/results.html",
         {
             "run": run,
+            "video": video,
             "video_id": video_id,
             "summaries": enriched_summaries,
             "chapters": enriched_chapters,

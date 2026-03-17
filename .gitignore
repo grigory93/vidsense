@@ -21,6 +21,10 @@ wheels/
 .installed.cfg
 *.egg
 
+# Database (local SQLite, do not commit)
+vidsense.db
+*.db
+
 # Environment
 .env
 .env.local

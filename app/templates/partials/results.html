@@ -1,126 +1,263 @@
+{% set total_duration = video.duration_sec if video and video.duration_sec else (chapters[-1].end_time_sec if chapters else 0) %}
+
 {% if is_partial and error_message %}
-<!-- Partial result warning -->
-<div class="mb-5 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
-  <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+<!-- Partial result notice — integrated, not just a banner -->
+<div class="mb-6 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3.5 text-sm">
+  <svg class="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
     <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
   </svg>
   <div>
-    <strong>Partial results available.</strong>
-    <p class="mt-0.5">{{ error_message }}</p>
+    <p class="font-semibold text-amber-900">Partial results available</p>
+    <p class="text-amber-700 mt-0.5 text-xs leading-relaxed">{{ error_message }} — Use Regenerate to retry the missing component.</p>
   </div>
 </div>
 {% endif %}
 
-<!-- Layered Summaries -->
+<!-- ================================================================
+     LAYERED SUMMARIES
+     ================================================================ -->
 {% if has_summaries %}
-<div class="mb-8" x-data="{ activeTab: 'thesis' }">
-  <h2 class="text-xl font-bold text-slate-900 mb-4">Summary</h2>
+<div class="mb-8"
+     x-data="{
+       activeTab: 'thesis',
+       get summaryText() {
+         const el = document.getElementById('summary-text-' + this.activeTab);
+         return el ? el.innerText : '';
+       },
+       copyActive() {
+         const el = document.getElementById('summary-text-' + this.activeTab);
+         if (el) window.vsCopyToClipboard(el.innerText, this.activeTab.charAt(0).toUpperCase() + this.activeTab.slice(1) + ' summary');
+       }
+     }">
 
-  <!-- Tab nav -->
-  <div class="flex gap-1 bg-slate-100 rounded-lg p-1 mb-5 w-fit">
+  <!-- Section header -->
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-bold text-slate-900">Summary</h2>
+    <!-- Copy button for active summary -->
     <button
-      @click="activeTab = 'thesis'"
-      :class="activeTab === 'thesis' ? 'bg-white shadow-sm text-brand-700 font-semibold' : 'text-slate-500 hover:text-slate-700'"
-      class="px-4 py-1.5 rounded-md text-sm transition-all"
-    >Quick Take</button>
-    <button
-      @click="activeTab = 'executive'"
-      :class="activeTab === 'executive' ? 'bg-white shadow-sm text-brand-700 font-semibold' : 'text-slate-500 hover:text-slate-700'"
-      class="px-4 py-1.5 rounded-md text-sm transition-all"
-    >Executive</button>
-    <button
-      @click="activeTab = 'detailed'"
-      :class="activeTab === 'detailed' ? 'bg-white shadow-sm text-brand-700 font-semibold' : 'text-slate-500 hover:text-slate-700'"
-      class="px-4 py-1.5 rounded-md text-sm transition-all"
-    >Detailed Outline</button>
+      @click="copyActive()"
+      class="flex items-center gap-1.5 text-xs text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 rounded px-2 py-1"
+      title="Copy active summary to clipboard"
+      aria-label="Copy active summary to clipboard"
+    >
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      </svg>
+      Copy
+    </button>
   </div>
 
-  <!-- Thesis tab -->
-  <div x-show="activeTab === 'thesis'" class="prose prose-slate max-w-none">
+  <!-- Card-based depth selector -->
+  <div class="grid grid-cols-3 gap-2 mb-5" role="tablist">
+
+    <!-- Quick Take -->
+    <button
+      role="tab"
+      :aria-selected="activeTab === 'thesis'"
+      @click="activeTab = 'thesis'"
+      class="summary-depth-card border rounded-xl p-3 text-left focus:outline-none focus:ring-2 focus:ring-brand-400"
+      :class="activeTab === 'thesis' ? 'is-active' : 'border-slate-200 bg-white hover:border-brand-300'"
+    >
+      <div class="flex items-center gap-1.5 mb-1.5">
+        <div class="flex gap-0.5">
+          <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'thesis' ? 'bg-brand-500' : 'bg-slate-300'"></span>
+          <span class="w-1.5 h-3 rounded-sm bg-slate-200"></span>
+          <span class="w-1.5 h-3 rounded-sm bg-slate-200"></span>
+        </div>
+      </div>
+      <p class="text-xs font-bold" :class="activeTab === 'thesis' ? 'text-brand-700' : 'text-slate-700'">Quick Take</p>
+      <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'thesis' ? 'text-brand-600' : 'text-slate-400'">1–2 sentence core insight · ~10 sec read</p>
+    </button>
+
+    <!-- Executive -->
+    <button
+      role="tab"
+      :aria-selected="activeTab === 'executive'"
+      @click="activeTab = 'executive'"
+      class="summary-depth-card border rounded-xl p-3 text-left focus:outline-none focus:ring-2 focus:ring-brand-400"
+      :class="activeTab === 'executive' ? 'is-active' : 'border-slate-200 bg-white hover:border-brand-300'"
+    >
+      <div class="flex items-center gap-1.5 mb-1.5">
+        <div class="flex gap-0.5">
+          <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'executive' ? 'bg-brand-500' : 'bg-slate-300'"></span>
+          <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'executive' ? 'bg-brand-400' : 'bg-slate-200'"></span>
+          <span class="w-1.5 h-3 rounded-sm bg-slate-200"></span>
+        </div>
+      </div>
+      <p class="text-xs font-bold" :class="activeTab === 'executive' ? 'text-brand-700' : 'text-slate-700'">Executive</p>
+      <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'executive' ? 'text-brand-600' : 'text-slate-400'">Full narrative context · ~1–2 min read</p>
+    </button>
+
+    <!-- Detailed Outline -->
+    <button
+      role="tab"
+      :aria-selected="activeTab === 'detailed'"
+      @click="activeTab = 'detailed'"
+      class="summary-depth-card border rounded-xl p-3 text-left focus:outline-none focus:ring-2 focus:ring-brand-400"
+      :class="activeTab === 'detailed' ? 'is-active' : 'border-slate-200 bg-white hover:border-brand-300'"
+    >
+      <div class="flex items-center gap-1.5 mb-1.5">
+        <div class="flex gap-0.5">
+          <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-500' : 'bg-slate-300'"></span>
+          <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-400' : 'bg-slate-200'"></span>
+          <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-300' : 'bg-slate-200'"></span>
+        </div>
+      </div>
+      <p class="text-xs font-bold" :class="activeTab === 'detailed' ? 'text-brand-700' : 'text-slate-700'">Detailed Outline</p>
+      <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'detailed' ? 'text-brand-600' : 'text-slate-400'">Every point covered · scannable list</p>
+    </button>
+
+  </div>
+
+  <!-- Summary content panes -->
+
+  <!-- Quick Take (thesis) -->
+  <div x-show="activeTab === 'thesis'"
+       x-transition:enter="transition-opacity duration-150"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100">
     {% if summaries.thesis %}
-    <p class="text-base leading-relaxed text-slate-700 bg-brand-50 border-l-4 border-brand-400 pl-4 py-2 rounded-r-lg">
-      {{ summaries.thesis.content_text }}
-    </p>
+    <div id="summary-text-thesis" class="relative">
+      <div class="absolute left-0 top-0 bottom-0 w-1 bg-brand-400 rounded-full"></div>
+      <blockquote class="pl-5 text-slate-800 text-base leading-relaxed font-medium">
+        {{ summaries.thesis.content_text }}
+      </blockquote>
+    </div>
     {% else %}
-    <p class="text-slate-400 italic">Quick Take summary not available.</p>
+    <p class="text-slate-400 italic text-sm">Quick Take summary not available.</p>
     {% endif %}
   </div>
 
-  <!-- Executive tab -->
-  <div x-show="activeTab === 'executive'" x-cloak>
+  <!-- Executive -->
+  <div x-show="activeTab === 'executive'" x-cloak
+       x-transition:enter="transition-opacity duration-150"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100">
     {% if summaries.executive %}
-    <div class="prose prose-slate max-w-none">
+    <div id="summary-text-executive">
       {% for para in summaries.executive.content_text.split('\n\n') %}
       {% if para.strip() %}
-      <p class="text-slate-700 leading-relaxed mb-3">{{ para }}</p>
+      <p class="text-slate-700 leading-relaxed mb-3 text-sm">{{ para.strip() }}</p>
       {% endif %}
       {% endfor %}
     </div>
     {% else %}
-    <p class="text-slate-400 italic">Executive summary not available.</p>
+    <p class="text-slate-400 italic text-sm">Executive summary not available.</p>
     {% endif %}
   </div>
 
-  <!-- Detailed outline tab -->
-  <div x-show="activeTab === 'detailed'" x-cloak>
+  <!-- Detailed Outline -->
+  <div x-show="activeTab === 'detailed'" x-cloak
+       x-transition:enter="transition-opacity duration-150"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100">
     {% if summaries.detailed %}
-    <ul class="space-y-2">
+    <ol id="summary-text-detailed" class="space-y-2">
       {% if summaries.detailed.content_json %}
         {% for point in summaries.detailed.content_json %}
-        <li class="flex items-start gap-2 text-slate-700 text-sm leading-relaxed">
-          <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-brand-400 flex-shrink-0"></span>
+        <li class="flex items-start gap-3 text-slate-700 text-sm leading-relaxed">
+          <span class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{{ loop.index }}</span>
           <span>{{ point }}</span>
         </li>
         {% endfor %}
       {% else %}
         {% for line in summaries.detailed.content_text.split('\n') %}
         {% if line.strip() %}
-        <li class="flex items-start gap-2 text-slate-700 text-sm leading-relaxed">
-          <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-brand-400 flex-shrink-0"></span>
-          <span>{{ line.lstrip('•-* ') }}</span>
+        <li class="flex items-start gap-3 text-slate-700 text-sm leading-relaxed">
+          <span class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{{ loop.index }}</span>
+          <span>{{ line.lstrip('•-*0123456789. ') }}</span>
         </li>
         {% endif %}
         {% endfor %}
       {% endif %}
-    </ul>
+    </ol>
     {% else %}
-    <p class="text-slate-400 italic">Detailed outline not available.</p>
+    <p class="text-slate-400 italic text-sm">Detailed outline not available.</p>
     {% endif %}
   </div>
+
 </div>
 {% endif %}
 
-<!-- Smart Chapters -->
+<!-- ================================================================
+     SMART CHAPTERS
+     ================================================================ -->
 {% if has_chapters %}
 <div id="chapters-section">
-  <h2 class="text-xl font-bold text-slate-900 mb-4">
-    Chapters
-    <span class="ml-2 text-sm font-normal text-slate-400">({{ chapters | length }})</span>
-  </h2>
 
+  <!-- Section header -->
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-xl font-bold text-slate-900">
+      Chapters
+      <span class="ml-2 text-sm font-normal text-slate-400">({{ chapters | length }})</span>
+    </h2>
+  </div>
+
+  <!-- Mini timeline bar -->
+  {% if total_duration and total_duration > 0 %}
+  <div class="mb-5">
+    <div class="vs-timeline mb-1" role="group" aria-label="Video chapter timeline">
+      {% set tl_colors = ['#0284c7','#0369a1','#0ea5e9','#38bdf8','#7dd3fc','#2563eb','#1d4ed8','#3b82f6'] %}
+      {% for chapter in chapters %}
+      {% set pct_left  = (chapter.start_time_sec / total_duration * 100) | round(2) %}
+      {% set pct_width = ((chapter.end_time_sec - chapter.start_time_sec) / total_duration * 100) | round(2) %}
+      {% set tl_color  = tl_colors[loop.index0 % (tl_colors | length)] %}
+      <div
+        class="vs-timeline-segment"
+        style="left:{{ pct_left }}%; width:{{ [pct_width, 1] | max }}%; background:{{ tl_color }};"
+        data-start="{{ chapter.start_time_sec }}"
+        data-chapter-id="{{ chapter.chapter_id }}"
+        title="Ch.{{ loop.index }}: {{ chapter.title }} ({{ chapter.start_display }})"
+        role="button"
+        tabindex="0"
+        aria-label="Jump to chapter {{ loop.index }}: {{ chapter.title }}"
+      ></div>
+      {% endfor %}
+    </div>
+    <div class="flex justify-between text-xs text-slate-400 px-0.5">
+      <span>0:00</span>
+      {% if video and video.duration_sec %}
+      <span>{{ (video.duration_sec // 60) }}:{{ '%02d' % (video.duration_sec % 60) }}</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Chapter cards list -->
   <div class="space-y-3" id="chapter-list">
     {% for chapter in chapters %}
+    {% set loop_index = loop.index %}
     {% include "partials/chapter_card.html" %}
     {% endfor %}
   </div>
+
 </div>
 {% elif not has_summaries %}
 <!-- Neither available -->
-<div class="text-center py-12 text-slate-400">
-  <p>No results available.</p>
+<div class="flex flex-col items-center justify-center py-16 text-center">
+  <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+    <svg class="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  </div>
+  <p class="text-slate-500 font-medium">No results available</p>
+  <p class="text-slate-400 text-sm mt-1">Try regenerating with a new focus prompt.</p>
 </div>
 {% endif %}
 
+<!-- Chapters failed but summaries available -->
 {% if not has_chapters and has_summaries %}
-<div class="mt-4 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-  <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+<div class="mt-5 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3.5 text-sm">
+  <svg class="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
     <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
   </svg>
-  Chapter extraction was not completed. Try regenerating.
+  <div>
+    <p class="font-semibold text-amber-900">Chapter extraction was not completed</p>
+    <p class="text-amber-700 text-xs mt-0.5">Use the Regenerate button on the right to try again.</p>
+  </div>
 </div>
 {% endif %}
 
 <script>
-  // Signal to HTMX polling that processing is done — stops the poll
   window.__vsProcessingComplete = true;
 </script>

@@ -4,7 +4,7 @@
  * Manages the YouTube IFrame API player:
  *  - Initialises the player once the API is ready
  *  - Exposes seekVideo(seconds) for timestamp clicks
- *  - Polls getCurrentTime() to highlight the active chapter card
+ *  - Polls getCurrentTime() to highlight the active chapter card and timeline segment
  */
 
 (function () {
@@ -12,13 +12,13 @@
 
   let player = null;
   let highlightInterval = null;
+  let isPlaying = false;
 
   // Called by the YouTube IFrame API once it loads
   window.onYouTubeIframeAPIReady = function () {
     const container = document.getElementById('yt-player');
     if (!container) return;
 
-    // Read video ID from nearest data attribute (set by video.html via Alpine scope)
     const youtubeId = window.__vsYoutubeId;
     if (!youtubeId) return;
 
@@ -39,13 +39,13 @@
   };
 
   function onPlayerReady() {
-    // Start the chapter-highlight loop
-    startHighlightLoop();
+    // Don't start the loop until playback begins — avoids auto-scrolling
+    // the page before the user has interacted with the player.
   }
 
   function onPlayerStateChange(event) {
-    // YT.PlayerState.PLAYING = 1, PAUSED = 2, ENDED = 0
-    if (event.data === YT.PlayerState.PLAYING) {
+    isPlaying = event.data === YT.PlayerState.PLAYING;
+    if (isPlaying) {
       startHighlightLoop();
     } else {
       stopHighlightLoop();
@@ -71,38 +71,57 @@
   function updateActiveChapter() {
     if (!player || typeof player.getCurrentTime !== 'function') return;
     const currentTime = player.getCurrentTime();
-    const cards = document.querySelectorAll('.chapter-card');
 
-    cards.forEach(function (card) {
-      const start = parseInt(card.dataset.start, 10);
-      const end = parseInt(card.dataset.end, 10);
+    const cards    = document.querySelectorAll('.chapter-card');
+    const segments = document.querySelectorAll('.vs-timeline-segment');
+
+    cards.forEach(function (card, idx) {
+      const start   = parseInt(card.dataset.start, 10);
+      const end     = parseInt(card.dataset.end, 10);
       const isActive = currentTime >= start && currentTime < end;
 
       if (isActive) {
-        card.classList.add('ring-2', 'ring-brand-400', 'border-brand-400', 'bg-brand-50/40');
-        // Scroll into view if not visible
-        if (!isInViewport(card)) {
+        card.classList.add('is-active-chapter');
+        // Auto-scroll only while playing and card is fully out of view
+        if (isPlaying && !isCardVisible(card)) {
           card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
+        if (segments[idx]) segments[idx].classList.add('is-active-segment');
       } else {
-        card.classList.remove('ring-2', 'ring-brand-400', 'border-brand-400', 'bg-brand-50/40');
+        card.classList.remove('is-active-chapter');
+        if (segments[idx]) segments[idx].classList.remove('is-active-segment');
       }
     });
   }
 
-  function isInViewport(el) {
-    const rect = el.getBoundingClientRect();
-    return rect.top >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight);
+  /**
+   * Returns true when the card is fully visible within its nearest
+   * scrollable ancestor — the content panel in the two-panel layout.
+   */
+  function isCardVisible(el) {
+    const scrollParent = document.getElementById('vs-content-panel') || getScrollParent(el);
+    if (!scrollParent) {
+      const rect = el.getBoundingClientRect();
+      return rect.top >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight);
+    }
+    const parentRect = scrollParent.getBoundingClientRect();
+    const elRect     = el.getBoundingClientRect();
+    return elRect.top >= parentRect.top && elRect.bottom <= parentRect.bottom;
+  }
+
+  function getScrollParent(el) {
+    if (!el || el === document.body) return null;
+    const style = window.getComputedStyle(el);
+    const oy    = style.overflowY;
+    if (oy === 'auto' || oy === 'scroll') return el;
+    return getScrollParent(el.parentElement);
   }
 
   // ------------------------------------------------------------------
   // Public API
   // ------------------------------------------------------------------
 
-  /**
-   * Seek the player to a given timestamp in seconds.
-   * Called by chapter timestamp buttons.
-   */
+  /** Seek the player to a given timestamp in seconds. */
   window.seekVideo = function (seconds) {
     if (player && typeof player.seekTo === 'function') {
       player.seekTo(seconds, true);
@@ -110,19 +129,17 @@
     }
   };
 
-  // Expose player for debugging
+  /** Expose player instance for app.js keyboard shortcut handling. */
   window.__vsPlayer = function () { return player; };
 
   // ------------------------------------------------------------------
-  // Bootstrap: read youtubeId from Alpine data on the page root
+  // Bootstrap: read youtubeId from data attribute or Alpine component
   // ------------------------------------------------------------------
   document.addEventListener('DOMContentLoaded', function () {
-    // The Alpine component on video.html exposes youtubeId via a global
-    // we set it when Alpine initialises the videoPage() component.
-    // Fallback: read from the data attribute on the player container.
     const container = document.getElementById('yt-player');
     if (container && container.dataset.youtubeId) {
       window.__vsYoutubeId = container.dataset.youtubeId;
     }
   });
+
 })();

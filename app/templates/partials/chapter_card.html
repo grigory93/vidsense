@@ -1,30 +1,64 @@
+{% set dur_sec = chapter.end_time_sec - chapter.start_time_sec %}
+{% set dur_m   = dur_sec // 60 %}
+{% set dur_s   = dur_sec % 60 %}
+{% if dur_m > 0 %}
+  {% set dur_display = dur_m ~ 'm ' ~ dur_s ~ 's' %}
+{% else %}
+  {% set dur_display = dur_s ~ 's' %}
+{% endif %}
+{% set line_count = chapter.transcript_segment.count('\n') + 1 if chapter.transcript_segment else 0 %}
+
 <div
-  class="chapter-card group border border-slate-200 rounded-xl bg-white hover:border-brand-300 hover:shadow-sm transition-all"
+  class="chapter-card group border border-slate-200 rounded-xl bg-white"
   data-start="{{ chapter.start_time_sec }}"
   data-end="{{ chapter.end_time_sec }}"
   id="chapter-{{ chapter.chapter_id }}"
   x-data="{ expanded: false }"
 >
-  <!-- Card header: timestamp + title -->
+  <!-- Card header: number + timestamp + title + duration -->
   <div class="flex items-start gap-3 p-4">
+
+    <!-- Chapter number badge -->
+    <span class="shrink-0 text-xs font-bold text-slate-400 w-5 text-right mt-0.5 select-none">{{ loop_index }}</span>
+
+    <!-- Timestamp button with play icon -->
     <button
       onclick="seekVideo({{ chapter.start_time_sec }})"
-      class="flex-shrink-0 font-mono text-xs font-semibold text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md px-2 py-1 transition-colors mt-0.5 focus:outline-none focus:ring-2 focus:ring-brand-400"
+      class="shrink-0 inline-flex items-center gap-1 font-mono text-sm font-semibold text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md px-2 py-1 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 mt-0.5"
       title="Jump to {{ chapter.start_display }}"
-    >{{ chapter.start_display }}</button>
+      aria-label="Jump to chapter {{ loop_index }} at {{ chapter.start_display }}"
+    >
+      <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M8 5v14l11-7z" />
+      </svg>
+      {{ chapter.start_display }}
+    </button>
+
+    <!-- Title + summary -->
     <div class="flex-1 min-w-0">
-      <h3 class="font-semibold text-slate-900 text-sm leading-snug">{{ chapter.title }}</h3>
+      <div class="flex items-start justify-between gap-2">
+        <h3 class="font-semibold text-slate-900 text-sm leading-snug">{{ chapter.title }}</h3>
+        <!-- "Now Playing" badge — shown via CSS class toggled by player.js -->
+        <span
+          class="shrink-0 hidden is-active-chapter-badge text-xs font-semibold text-brand-600 bg-brand-50 border border-brand-200 rounded-full px-2 py-0.5 whitespace-nowrap"
+        >Now Playing</span>
+      </div>
       <p class="text-slate-500 text-xs mt-1 leading-relaxed">{{ chapter.summary }}</p>
     </div>
+
+    <!-- Duration badge -->
+    <span class="shrink-0 text-xs text-slate-400 font-medium mt-1 whitespace-nowrap">{{ dur_display }}</span>
   </div>
 
-  <!-- Key points -->
+  <!-- Key points with checkmark icons -->
   {% if chapter.key_points %}
-  <div class="px-4 pb-3 pt-0">
-    <ul class="space-y-1">
+  <div class="px-4 pb-3 pt-0 border-t border-slate-50">
+    <ul class="space-y-1.5 mt-2">
       {% for point in chapter.key_points %}
-      <li class="flex items-start gap-2 text-xs text-slate-600">
-        <span class="mt-1.5 w-1 h-1 rounded-full bg-slate-300 flex-shrink-0"></span>
+      <li class="flex items-start gap-2 text-xs text-slate-600 leading-relaxed">
+        <svg class="w-3.5 h-3.5 text-brand-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
         <span>{{ point }}</span>
       </li>
       {% endfor %}
@@ -33,22 +67,34 @@
   {% endif %}
 
   <!-- Expandable transcript segment -->
+  {% if chapter.transcript_segment %}
   <div class="border-t border-slate-100 px-4">
     <button
       @click="expanded = !expanded"
-      class="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 py-2 transition-colors focus:outline-none"
+      class="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 py-2.5 transition-colors focus:outline-none w-full"
+      :aria-expanded="expanded"
+      aria-controls="transcript-{{ chapter.chapter_id }}"
     >
       <svg
-        class="w-3.5 h-3.5 transition-transform"
+        class="w-3.5 h-3.5 transition-transform duration-150"
         :class="{ 'rotate-90': expanded }"
         fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
       >
         <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
       </svg>
-      <span x-text="expanded ? 'Hide transcript' : 'Show transcript'"></span>
+      <span x-text="expanded ? 'Hide transcript' : 'View transcript{% if line_count > 0 %} ({{ line_count }} lines){% endif %}'"></span>
     </button>
-    <div x-show="expanded" x-cloak class="pb-4">
-      <p class="text-xs text-slate-500 leading-relaxed font-mono bg-slate-50 rounded-lg px-3 py-2 whitespace-pre-wrap">{{ chapter.transcript_segment }}</p>
+    <div
+      id="transcript-{{ chapter.chapter_id }}"
+      x-show="expanded"
+      x-cloak
+      x-transition:enter="transition-opacity duration-150"
+      x-transition:enter-start="opacity-0"
+      x-transition:enter-end="opacity-100"
+      class="pb-4"
+    >
+      <p class="text-xs text-slate-500 leading-relaxed font-mono bg-slate-50 rounded-lg px-3 py-2.5 whitespace-pre-wrap">{{ chapter.transcript_segment }}</p>
     </div>
   </div>
+  {% endif %}
 </div>
