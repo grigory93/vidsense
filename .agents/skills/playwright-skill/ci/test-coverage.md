@@ -453,12 +453,12 @@ npm install -D v8-to-istanbul
 
 **Cause**: Parallel workers override each other's coverage files if filenames collide.
 
-**Fix**: Include `workerInfo.workerIndex` or a UUID in the filename:
+**Fix**: Include `testInfo.workerIndex` or a UUID in the filename:
 
 ```ts
 const coverageFile = path.join(
   coverageDir,
-  `coverage-worker${workerInfo.workerIndex}-${crypto.randomUUID()}.json`
+  `coverage-worker${testInfo.workerIndex}-${crypto.randomUUID()}.json`
 );
 ```
 
