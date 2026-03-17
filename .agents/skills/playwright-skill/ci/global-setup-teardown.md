@@ -327,15 +327,27 @@ setup('authenticate', async ({ page }) => {
 **Avoid when**: Per-test or per-worker isolation is needed (use fixtures).
 
 ```ts
+// tests/setup-state.ts  ← shared module; import from both setup and teardown
+export const setupState: {
+  mockServer?: { close(): Promise<void> };
+} = {};
+```
+
+```ts
 // tests/global-setup.ts
 import type { FullConfig } from '@playwright/test';
+import { setupState } from './setup-state';
 
 async function globalSetup(config: FullConfig) {
-  // Start a mock API server
+  // Start a mock API server and store the handle so globalTeardown can close it
   const { createServer } = await import('../mocks/server');
   const server = await createServer();
   const port = await server.listen(0);
   process.env.MOCK_API_URL = `http://localhost:${port}`;
+
+  // Persist the handle — globalSetup and globalTeardown are separate modules,
+  // so a local variable here is unreachable from teardown.
+  setupState.mockServer = server;
 
   // Configure feature flags for test environment
   const baseURL = config.projects[0]?.use?.baseURL || 'http://localhost:3000';
@@ -351,9 +363,6 @@ async function globalSetup(config: FullConfig) {
       betaFeatures: true,
     }),
   });
-
-  // Return a cleanup function (Playwright calls globalTeardown separately)
-  // For cleanup, use globalTeardown
 }
 
 export default globalSetup;
@@ -362,8 +371,12 @@ export default globalSetup;
 ```ts
 // tests/global-teardown.ts
 import type { FullConfig } from '@playwright/test';
+import { setupState } from './setup-state';
 
 async function globalTeardown(config: FullConfig) {
+  // Close the mock server started in globalSetup
+  await setupState.mockServer?.close();
+
   // Reset feature flags
   const baseURL = config.projects[0]?.use?.baseURL || 'http://localhost:3000';
   await fetch(`${baseURL}/api/admin/feature-flags/reset`, {
