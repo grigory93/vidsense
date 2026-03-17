@@ -230,13 +230,32 @@ on:
         required: false
 
 jobs:
+  generate-shard-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - id: build
+        run: |
+          n=${{ inputs.shard-total }}
+          if [ "$n" -le 1 ]; then
+            echo 'matrix=["1/1"]' >> $GITHUB_OUTPUT
+          else
+            parts=()
+            for ((i=1; i<=n; i++)); do
+              parts+=("\"$i/$n\"")
+            done
+            echo "matrix=[$(IFS=,; echo "${parts[*]}")]" >> $GITHUB_OUTPUT
+          fi
+
   test:
+    needs: generate-shard-matrix
     timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJson(format('[{0}]', join(fromJson(format('[{0}]', inputs.shard-total == 1 && '"1/1"' || '"1/4","2/4","3/4","4/4"')), ','))) }}
+        shard: ${{ fromJson(needs.generate-shard-matrix.outputs.matrix) }}
 
     env:
       CI: true

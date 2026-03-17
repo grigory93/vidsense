@@ -43,15 +43,15 @@ export default defineConfig({
 import type { FullConfig } from '@playwright/test';
 
 async function globalSetup(config: FullConfig) {
+  // Set env vars first so they propagate to workers (before any async work)
+  process.env.TEST_RUN_ID = `run-${Date.now()}`;
+
   console.log('Global setup: seeding database...');
 
   // Seed the test database
   const { execSync } = await import('child_process');
   execSync('npx prisma db push --force-reset', { stdio: 'inherit' });
   execSync('npx prisma db seed', { stdio: 'inherit' });
-
-  // Store run metadata for tests to use
-  process.env.TEST_RUN_ID = `run-${Date.now()}`;
 }
 
 export default globalSetup;
