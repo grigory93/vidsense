@@ -97,6 +97,7 @@ class SummaryResponseSchema(BaseModel):
 class AnalyzeRequestSchema(BaseModel):
     url: str = Field(description="YouTube video URL")
     focus_prompt: str | None = Field(default=None, max_length=500, description="Optional global focus prompt")
+    force_regenerate: bool = Field(default=False, description="If true, bypass cached run and rerun the LLM pipeline")
 
     @model_validator(mode="after")
     def sanitize_focus_prompt(self) -> "AnalyzeRequestSchema":
@@ -109,6 +110,7 @@ class AnalyzeRequestSchema(BaseModel):
 
 class RegenerateRequestSchema(BaseModel):
     focus_prompt: str | None = Field(default=None, max_length=500, description="Optional updated focus prompt")
+    force_regenerate: bool = Field(default=False, description="If true, bypass cached run and rerun the LLM pipeline")
 
     @model_validator(mode="after")
     def sanitize_focus_prompt(self) -> "RegenerateRequestSchema":

@@ -11,7 +11,7 @@ import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
@@ -28,6 +28,32 @@ from app.services.youtube import get_transcript_for_video, ingest_video
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _find_cached_run(
+    video_id: int,
+    focus_prompt: str | None,
+    session: AsyncSession,
+) -> AnalysisRun | None:
+    """Return the most recent complete run for (video_id, focus_prompt), or None."""
+    if focus_prompt:
+        focus_filter = AnalysisRun.focus_prompt == focus_prompt
+    else:
+        focus_filter = or_(
+            AnalysisRun.focus_prompt.is_(None),
+            AnalysisRun.focus_prompt == "",
+        )
+    result = await session.execute(
+        select(AnalysisRun)
+        .where(
+            AnalysisRun.video_id == video_id,
+            AnalysisRun.status == AnalysisRunStatus.complete,
+            focus_filter,
+        )
+        .order_by(AnalysisRun.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +107,22 @@ async def analyze(
 
     video = result.video
     transcript_source = result.transcript_source
+    quality_warning = result.quality_warning
+
+    # Cache check: return existing complete run unless caller wants a fresh one
+    if not body.force_regenerate:
+        cached_run = await _find_cached_run(video.id, body.focus_prompt, session)
+        if cached_run:
+            logger.info(
+                "Cache hit: returning existing run %d for video %d (focus=%r)",
+                cached_run.id, video.id, body.focus_prompt,
+            )
+            return {
+                "run_id": cached_run.id,
+                "video_id": video.id,
+                "quality_warning": quality_warning,
+                "cached": True,
+            }
 
     # Create the run record so we can return run_id immediately
     from app.models.db import AnalysisRun as Run
@@ -96,7 +138,6 @@ async def analyze(
 
     run_id = run.id
     video_id = video.id
-    quality_warning = result.quality_warning
 
     # Run pipeline in background
     background_tasks.add_task(
@@ -109,6 +150,7 @@ async def analyze(
         "run_id": run_id,
         "video_id": video_id,
         "quality_warning": quality_warning,
+        "cached": False,
     }
 
 
@@ -313,6 +355,16 @@ async def regenerate(
             },
         )
 
+    # Cache check: return existing complete run unless caller wants a fresh one
+    if not body.force_regenerate:
+        cached_run = await _find_cached_run(video_id, body.focus_prompt, session)
+        if cached_run:
+            logger.info(
+                "Cache hit: returning existing run %d for video %d (focus=%r)",
+                cached_run.id, video_id, body.focus_prompt,
+            )
+            return {"run_id": cached_run.id, "video_id": video_id, "cached": True}
+
     # Create new run with updated focus
     run = AnalysisRun(
         video_id=video_id,
@@ -329,7 +381,7 @@ async def regenerate(
         transcript_source_id=transcript_source.id,
     )
 
-    return {"run_id": run.id, "video_id": video_id}
+    return {"run_id": run.id, "video_id": video_id, "cached": False}
 
 
 # ---------------------------------------------------------------------------
