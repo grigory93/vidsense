@@ -235,10 +235,23 @@ export default defineConfig({
     // Screenshots
     screenshot: 'only-on-failure',  // capture final state on failure
 
-    // Video
+    // Video -- string shorthand
     video: 'retain-on-failure',     // record all, keep only failures
+  },
+});
+```
 
-    // Video size (optional -- smaller = less disk)
+**Or use the object form to control video size** (mutually exclusive with the string shorthand above):
+
+```ts
+// playwright.config.ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  use: {
+    screenshot: 'only-on-failure',
+
+    // Video -- object form with optional size override (smaller = less disk)
     video: {
       mode: 'retain-on-failure',
       size: { width: 1280, height: 720 },
