@@ -138,6 +138,19 @@
           </p>
         </div>
 
+        <!-- Force regenerate toggle -->
+        <div class="flex items-center justify-between">
+          <label class="flex items-center gap-2 cursor-pointer select-none group">
+            <input
+              type="checkbox"
+              x-model="forceRegenerate"
+              :disabled="loading"
+              class="rounded border-slate-300 text-brand-600 focus:ring-brand-500 focus:ring-offset-0"
+            />
+            <span class="text-xs text-slate-500 group-hover:text-slate-700 transition-colors">Force re-run (ignore cached results)</span>
+          </label>
+        </div>
+
         <!-- Submit -->
         <button
           type="submit"
@@ -200,6 +213,7 @@ function analyzeForm() {
   return {
     url: '',
     focusPrompt: '',
+    forceRegenerate: false,
     loading: false,
     clientError: '',
     serverError: '',
@@ -274,6 +288,7 @@ function analyzeForm() {
           body: JSON.stringify({
             url: this.normalizedUrl,
             focus_prompt: this.focusPrompt.trim() || null,
+            force_regenerate: this.forceRegenerate,
           }),
         });
 
@@ -293,6 +308,7 @@ function analyzeForm() {
 
         let redirect = `/video/${data.video_id}?run_id=${data.run_id}`;
         if (data.quality_warning) redirect += '&qw=1';
+        if (data.cached) redirect += '&from_cache=1';
         window.location.href = redirect;
         return;
       } catch (err) {

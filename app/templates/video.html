@@ -113,6 +113,16 @@
           aria-label="Focus prompt for regeneration"
         ></textarea>
 
+        <label class="flex items-center gap-2 cursor-pointer select-none" :class="{'opacity-50 cursor-not-allowed': regenerating}">
+          <input
+            type="checkbox"
+            x-model="forceRegenerate"
+            :disabled="regenerating"
+            class="rounded border-slate-300 text-brand-600 focus:ring-brand-500 focus:ring-offset-0"
+          />
+          <span class="text-xs text-slate-500">Force re-run (ignore cached results)</span>
+        </label>
+
         <button
           type="submit"
           :disabled="regenerating"
@@ -188,7 +198,7 @@
     <div
       id="content-area"
       class="px-5 sm:px-8 py-6"
-      hx-get="/partials/video/{{ video.id }}/status{% if run %}?run_id={{ run.id }}{% endif %}"
+      hx-get="/partials/video/{{ video.id }}/status{% if run %}?run_id={{ run.id }}{% if from_cache %}&from_cache=1{% endif %}{% endif %}"
       hx-trigger="load, every 3s [!window.__vsProcessingComplete]"
       hx-swap="innerHTML"
     >
@@ -209,6 +219,7 @@ function videoPage(videoId, youtubeId, runId) {
     youtubeId,
     runId,
     focusPrompt: '',
+    forceRegenerate: false,
     regenerating: false,
     regenStatus: '',
     regenMessage: '',
@@ -227,14 +238,17 @@ function videoPage(videoId, youtubeId, runId) {
       this._savedFocusPrompt = this.focusPrompt;
       this.regenerating = true;
       this.regenStatus = 'processing';
-      this.regenMessage = 'Starting regeneration…';
+      this.regenMessage = this.forceRegenerate ? 'Starting fresh regeneration…' : 'Checking for cached results…';
       window.__vsProcessingComplete = false;
 
       try {
         const resp = await fetch(`/api/video/${this.videoId}/regenerate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ focus_prompt: this.focusPrompt.trim() || null }),
+          body: JSON.stringify({
+            focus_prompt: this.focusPrompt.trim() || null,
+            force_regenerate: this.forceRegenerate,
+          }),
         });
 
         if (!resp.ok) {
@@ -248,6 +262,26 @@ function videoPage(videoId, youtubeId, runId) {
 
         const data = await resp.json();
         this.runId = data.run_id;
+
+        if (data.cached) {
+          // Cache hit: results are already available — load them immediately
+          this.regenStatus  = 'done';
+          this.regenMessage = 'Loaded from previous analysis — no LLM call needed.';
+          window.vsShowToast('Loaded from cache', 'info');
+          const contentArea = document.getElementById('content-area');
+          if (contentArea) {
+            contentArea.setAttribute(
+              'hx-get',
+              `/partials/video/${this.videoId}/status?run_id=${this.runId}&from_cache=1`
+            );
+            window.__vsProcessingComplete = false;
+            htmx.process(contentArea);
+            htmx.trigger(contentArea, 'load');
+          }
+          setTimeout(() => { this.regenStatus = ''; }, 5000);
+          return;
+        }
+
         this.regenStatus  = 'processing';
         this.regenMessage = 'Reusing cached transcript — regenerating…';
 

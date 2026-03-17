@@ -45,6 +45,7 @@ async def video_page(
     video_id: int,
     run_id: int | None = None,
     qw: int | None = None,  # quality warning flag
+    from_cache: int = 0,   # 1 = results were served from a cached run
     request: Request = None,
     session: AsyncSession = Depends(get_session),
 ):
@@ -79,6 +80,7 @@ async def video_page(
             "run": run,
             "quality_warning": bool(qw),
             "initial_focus_prompt": run.focus_prompt if run else None,
+            "from_cache": bool(from_cache),
         },
     )
 
@@ -92,6 +94,7 @@ async def video_page(
 async def partial_status(
     video_id: int,
     run_id: int | None = None,
+    from_cache: int = 0,
     request: Request = None,
     session: AsyncSession = Depends(get_session),
 ):
@@ -271,6 +274,7 @@ async def partial_status(
             "has_chapters": bool(chapters),
             "is_partial": run.status == AnalysisRunStatus.partial,
             "error_message": run.error_message,
+            "from_cache": bool(from_cache),
             "processing_time_label": processing_time_label,
         },
     )
