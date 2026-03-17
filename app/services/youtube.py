@@ -294,6 +294,12 @@ async def ingest_video(
         duration_sec=duration_sec,
         language=lang_code or detected_lang,
         thumbnail_url=metadata.get("thumbnail"),
+        channel_name=metadata.get("uploader") or metadata.get("channel"),
+        channel_url=metadata.get("channel_url") or metadata.get("uploader_url"),
+        description=metadata.get("description"),
+        upload_date=metadata.get("upload_date"),
+        view_count=metadata.get("view_count"),
+        like_count=metadata.get("like_count"),
     )
     if not existing_video:
         session.add(video)

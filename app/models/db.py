@@ -45,6 +45,12 @@ class Video(Base):
     duration_sec: Mapped[int | None] = mapped_column(Integer)
     language: Mapped[str | None] = mapped_column(String(10))
     thumbnail_url: Mapped[str | None] = mapped_column(String(512))
+    channel_name: Mapped[str | None] = mapped_column(String(256))
+    channel_url: Mapped[str | None] = mapped_column(String(512))
+    description: Mapped[str | None] = mapped_column(Text)
+    upload_date: Mapped[str | None] = mapped_column(String(20))
+    view_count: Mapped[int | None] = mapped_column(Integer)
+    like_count: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     transcript_sources: Mapped[list["TranscriptSource"]] = relationship(

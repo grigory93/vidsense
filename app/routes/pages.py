@@ -128,10 +128,64 @@ async def partial_status(
         )
 
     if run.status in (AnalysisRunStatus.pending, AnalysisRunStatus.processing):
+        # Check for any intermediate results already persisted by the pipeline
+        interim_summaries_result = await session.execute(
+            select(Summary).where(Summary.run_id == run.id)
+        )
+        interim_summaries = interim_summaries_result.scalars().all()
+
+        interim_chapters_result = await session.execute(
+            select(Chapter).where(Chapter.run_id == run.id).order_by(Chapter.sort_order)
+        )
+        interim_chapters = interim_chapters_result.scalars().all()
+
+        interim_enriched_summaries: dict = {}
+        for s in interim_summaries:
+            content_json = None
+            if s.content_json:
+                try:
+                    content_json = json.loads(s.content_json)
+                except (json.JSONDecodeError, TypeError):
+                    content_json = None
+            interim_enriched_summaries[s.level.value] = {
+                "content_text": s.content_text,
+                "content_json": content_json,
+            }
+
+        interim_enriched_chapters = []
+        for ch in interim_chapters:
+            try:
+                key_points = json.loads(ch.key_points_json)
+            except (json.JSONDecodeError, TypeError):
+                key_points = []
+            interim_enriched_chapters.append(
+                {
+                    "id": ch.id,
+                    "chapter_id": ch.chapter_id,
+                    "title": ch.title,
+                    "start_time_sec": ch.start_time_sec,
+                    "end_time_sec": ch.end_time_sec,
+                    "start_display": _seconds_to_mmss(ch.start_time_sec),
+                    "end_display": _seconds_to_mmss(ch.end_time_sec),
+                    "summary": ch.summary,
+                    "key_points": key_points,
+                    "transcript_segment": ch.transcript_segment,
+                    "sort_order": ch.sort_order,
+                }
+            )
+
         return templates.TemplateResponse(
             request,
             "partials/processing.html",
-            {"run": run, "video_id": video_id, "video": video},
+            {
+                "run": run,
+                "video_id": video_id,
+                "video": video,
+                "interim_summaries": interim_enriched_summaries,
+                "interim_chapters": interim_enriched_chapters,
+                "has_interim_summaries": bool(interim_summaries),
+                "has_interim_chapters": bool(interim_chapters),
+            },
         )
 
     if run.status == AnalysisRunStatus.failed:
@@ -194,6 +248,16 @@ async def partial_status(
             "content_json": content_json,
         }
 
+    # Compute total processing time
+    processing_time_label: str | None = None
+    if run.completed_at and run.created_at:
+        delta_sec = int((run.completed_at - run.created_at).total_seconds())
+        if delta_sec >= 60:
+            m, s = divmod(delta_sec, 60)
+            processing_time_label = f"{m}m {s}s"
+        else:
+            processing_time_label = f"{delta_sec}s"
+
     return templates.TemplateResponse(
         request,
         "partials/results.html",
@@ -207,5 +271,6 @@ async def partial_status(
             "has_chapters": bool(chapters),
             "is_partial": run.status == AnalysisRunStatus.partial,
             "error_message": run.error_message,
+            "processing_time_label": processing_time_label,
         },
     )

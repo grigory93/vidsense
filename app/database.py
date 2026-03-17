@@ -29,6 +29,12 @@ async def _add_missing_columns(conn) -> None:
     """Safely add new columns to existing tables (SQLite-compatible)."""
     migrations = [
         ("analysis_runs", "current_step", "VARCHAR(64)"),
+        ("videos", "channel_name", "VARCHAR(256)"),
+        ("videos", "channel_url", "VARCHAR(512)"),
+        ("videos", "description", "TEXT"),
+        ("videos", "upload_date", "VARCHAR(20)"),
+        ("videos", "view_count", "INTEGER"),
+        ("videos", "like_count", "INTEGER"),
     ]
     for table, column, col_type in migrations:
         try:
