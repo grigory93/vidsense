@@ -102,11 +102,14 @@
     const scrollParent = document.getElementById('vs-content-panel') || getScrollParent(el);
     if (!scrollParent) {
       const rect = el.getBoundingClientRect();
-      return rect.top >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight);
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      const overlap = Math.min(rect.bottom, vh) - Math.max(rect.top, 0);
+      return overlap >= Math.max(40, Math.min(rect.height, vh) * 0.35);
     }
     const parentRect = scrollParent.getBoundingClientRect();
     const elRect     = el.getBoundingClientRect();
-    return elRect.top >= parentRect.top && elRect.bottom <= parentRect.bottom;
+    const overlap = Math.min(elRect.bottom, parentRect.bottom) - Math.max(elRect.top, parentRect.top);
+    return overlap >= Math.max(40, Math.min(elRect.height, parentRect.height) * 0.35);
   }
 
   function getScrollParent(el) {

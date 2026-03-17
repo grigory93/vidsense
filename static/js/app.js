@@ -187,10 +187,8 @@
   // Timeline segment click (delegated from document)
   // ----------------------------------------------------------------
 
-  document.addEventListener('click', function (e) {
-    const seg = e.target.closest('.vs-timeline-segment');
+  function activateTimelineSegment(seg) {
     if (!seg) return;
-
     const start = parseInt(seg.dataset.start, 10);
     if (!isNaN(start) && window.seekVideo) {
       window.seekVideo(start);
@@ -203,6 +201,20 @@
         card.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }
+  }
+
+  document.addEventListener('click', function (e) {
+    const seg = e.target.closest('.vs-timeline-segment');
+    if (!seg) return;
+    activateTimelineSegment(seg);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    const seg = e.target.closest('.vs-timeline-segment');
+    if (!seg) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    activateTimelineSegment(seg);
   });
 
 })();
