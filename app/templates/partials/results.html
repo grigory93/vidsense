@@ -34,7 +34,8 @@
          const el = document.getElementById('summary-text-' + this.activeTab);
          if (el) window.vsCopyToClipboard(el.innerText, this.activeTab.charAt(0).toUpperCase() + this.activeTab.slice(1) + ' summary');
        }
-     }">
+     }"
+     x-init="activeTab = (window.__vsSummaryTab || 'thesis'); $watch('activeTab', v => window.__vsSummaryTab = v)">
 
   <!-- Section header -->
   <div class="flex items-center justify-between mb-4">
