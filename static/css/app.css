@@ -198,6 +198,78 @@
 }
 
 /* ============================================================
+   Fixed-height summary content container (prevents chapters from shifting)
+   ============================================================ */
+
+.summary-content-container {
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 1rem;
+  margin-bottom: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.summary-content-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.summary-content-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.summary-content-container::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
+
+/* ============================================================
+   Collapsible chapter card header
+   ============================================================ */
+
+.chapter-card-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.chapter-card-header:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: -2px;
+  border-radius: 0.75rem;
+}
+
+.chapter-card-chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chapter-card-chevron.is-expanded {
+  transform: rotate(90deg);
+}
+
+/* Smooth collapse transition for the chapter body */
+.chapter-card-body {
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.2s ease;
+}
+
+/* Video metadata section */
+.vs-metadata-section {
+  border-top: 1px solid #f1f5f9;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+}
+
+.vs-description-text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+
+.vs-description-text.is-collapsed {
+  -webkit-line-clamp: 3;
+}
+
+/* ============================================================
    Prose overrides for summary content
    ============================================================ */
 
