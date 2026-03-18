@@ -103,7 +103,7 @@
       <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'executive' ? 'text-brand-600' : 'text-slate-400'">Full narrative context · ~1–2 min read</p>
     </button>
 
-    <!-- Detailed Outline -->
+    <!-- Detailed Outline (+ Chapters) -->
     <button
       role="tab"
       :aria-selected="activeTab === 'detailed'"
@@ -119,13 +119,16 @@
         </div>
       </div>
       <p class="text-xs font-bold" :class="activeTab === 'detailed' ? 'text-brand-700' : 'text-slate-700'">Detailed Outline</p>
-      <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'detailed' ? 'text-brand-600' : 'text-slate-400'">Every point covered · scannable list</p>
+      <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'detailed' ? 'text-brand-600' : 'text-slate-400'">
+        {%- if has_chapters %}Full outline &amp; {{ chapters | length }} chapters · deep dive
+        {%- else %}Every point covered · scannable list{% endif -%}
+      </p>
     </button>
 
   </div>
 
-  <!-- Fixed-height scrollable summary content — prevents chapters below from shifting -->
-  <div class="summary-content-container overflow-y-auto" style="max-height: 28rem; min-height: 8rem;">
+  <!-- Quick Take and Executive use a constrained scrollable container to prevent page jump -->
+  <div class="overflow-y-auto" :style="activeTab !== 'detailed' ? 'max-height:28rem;min-height:8rem;' : ''">
 
     <!-- Quick Take (thesis) -->
     <div x-show="activeTab === 'thesis'"
@@ -162,128 +165,331 @@
       {% endif %}
     </div>
 
-    <!-- Detailed Outline -->
+    <!-- ============================================================
+         DETAILED OUTLINE — unified chapter list (true merge)
+         ============================================================ -->
     <div x-show="activeTab === 'detailed'" x-cloak
          x-transition:enter="transition-opacity duration-150"
          x-transition:enter-start="opacity-0"
          x-transition:enter-end="opacity-100">
-      {% if summaries.detailed %}
-      <ol id="summary-text-detailed" class="space-y-2">
-        {% if summaries.detailed.content_json %}
-          {% for point in summaries.detailed.content_json %}
-          <li class="flex items-start gap-3 text-slate-700 text-sm leading-relaxed">
-            <span class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{{ loop.index }}</span>
-            <span>{{ point }}</span>
-          </li>
-          {% endfor %}
-        {% else %}
-          {% for line in summaries.detailed.content_text.split('\n') %}
-          {% if line.strip() %}
-          <li class="flex items-start gap-3 text-slate-700 text-sm leading-relaxed">
-            <span class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{{ loop.index }}</span>
-            <span>{{ line.lstrip('•-*0123456789. ') }}</span>
-          </li>
-          {% endif %}
-          {% endfor %}
+
+      {% if detailed_outline_groups and detailed_outline_groups[0].chapter %}
+      <!-- ── Unified: each chapter is one collapsible unit ── -->
+      <div x-data="{ allExpanded: false }" id="summary-text-detailed">
+
+        <!-- Mini timeline bar -->
+        {% if total_duration and total_duration > 0 %}
+        <div class="mb-4">
+          <div class="vs-timeline mb-1" role="group" aria-label="Video chapter timeline">
+            {% set tl_colors = ['#0284c7','#0369a1','#0ea5e9','#38bdf8','#7dd3fc','#2563eb','#1d4ed8','#3b82f6'] %}
+            {% for group in detailed_outline_groups %}
+            {% set ch = group.chapter %}
+            {% set pct_left  = (ch.start_time_sec / total_duration * 100) | round(2) %}
+            {% set pct_width = ((ch.end_time_sec - ch.start_time_sec) / total_duration * 100) | round(2) %}
+            {% set tl_color  = tl_colors[loop.index0 % (tl_colors | length)] %}
+            <div
+              class="vs-timeline-segment"
+              style="left:{{ pct_left }}%; width:{{ [pct_width, 1] | max }}%; background:{{ tl_color }};"
+              data-start="{{ ch.start_time_sec }}"
+              data-chapter-id="{{ ch.chapter_id }}"
+              title="Ch.{{ loop.index }}: {{ ch.title }} ({{ ch.start_display }})"
+              role="button"
+              tabindex="0"
+              aria-label="Jump to chapter {{ loop.index }}: {{ ch.title }}"
+            ></div>
+            {% endfor %}
+          </div>
+          <div class="flex justify-between text-xs text-slate-400 px-0.5">
+            <span>0:00</span>
+            {% if video and video.duration_sec %}
+            <span>{{ (video.duration_sec // 60) }}:{{ '%02d' % (video.duration_sec % 60) }}</span>
+            {% endif %}
+          </div>
+        </div>
         {% endif %}
+
+        <!-- Controls: chapter count + Expand / Collapse All -->
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            {{ detailed_outline_groups | length }} chapters
+          </span>
+          <button
+            @click="allExpanded = !allExpanded"
+            class="flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 rounded px-2 py-1"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path x-show="!allExpanded" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              <path x-show="allExpanded" x-cloak stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+            </svg>
+            <span x-text="allExpanded ? 'Collapse all' : 'Expand all'"></span>
+          </button>
+        </div>
+
+        <!-- Unified chapter list -->
+        <div class="space-y-2" id="chapter-list">
+          {% for group in detailed_outline_groups %}
+          {% set chapter = group.chapter %}
+          {% set dur_sec = chapter.end_time_sec - chapter.start_time_sec %}
+          {% set dur_m   = dur_sec // 60 %}
+          {% set dur_s   = dur_sec % 60 %}
+          {% set dur_display = (dur_m ~ 'm ' ~ dur_s ~ 's') if dur_m > 0 else (dur_s ~ 's') %}
+          {% set line_count  = chapter.transcript_segment.count('\n') + 1 if chapter.transcript_segment else 0 %}
+          {% set ch_idx = loop.index %}
+
+          <div
+            class="chapter-card group border border-slate-200 rounded-xl bg-white"
+            data-start="{{ chapter.start_time_sec }}"
+            data-end="{{ chapter.end_time_sec }}"
+            id="chapter-{{ chapter.chapter_id }}"
+            x-data="{ localExpanded: false, transcriptOpen: false }"
+          >
+            <!-- Clickable header: expand/collapse + timestamp + title + badge + duration + chevron -->
+            <div
+              class="chapter-card-header flex items-start gap-3 p-4"
+              @click="localExpanded = !localExpanded"
+              role="button"
+              tabindex="0"
+              @keydown.enter.prevent="localExpanded = !localExpanded"
+              @keydown.space.prevent="localExpanded = !localExpanded"
+              :aria-expanded="allExpanded || localExpanded"
+            >
+              <span class="shrink-0 text-xs font-bold text-slate-400 w-5 text-right mt-0.5 select-none">{{ ch_idx }}</span>
+
+              <button
+                onclick="event.stopPropagation(); seekVideo({{ chapter.start_time_sec }})"
+                class="shrink-0 inline-flex items-center gap-1 font-mono text-sm font-semibold text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md px-2 py-1 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 mt-0.5"
+                title="Jump to {{ chapter.start_display }}"
+                aria-label="Jump to chapter {{ ch_idx }} at {{ chapter.start_display }}"
+              >
+                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                {{ chapter.start_display }}
+              </button>
+
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-2">
+                  <h3 class="font-semibold text-slate-900 text-sm leading-snug">{{ chapter.title }}</h3>
+                  <span class="shrink-0 hidden is-active-chapter-badge text-xs font-semibold text-brand-600 bg-brand-50 border border-brand-200 rounded-full px-2 py-0.5 whitespace-nowrap">Now Playing</span>
+                </div>
+              </div>
+
+              <span class="shrink-0 text-xs text-slate-400 font-medium mt-1 whitespace-nowrap">{{ dur_display }}</span>
+
+              <svg
+                class="chapter-card-chevron shrink-0 w-3.5 h-3.5 text-slate-300 mt-1"
+                :class="(allExpanded || localExpanded) ? 'is-expanded' : ''"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+
+            <!-- Expandable body -->
+            <div
+              x-show="allExpanded || localExpanded"
+              x-cloak
+              x-transition:enter="transition-opacity duration-150"
+              x-transition:enter-start="opacity-0"
+              x-transition:enter-end="opacity-100"
+            >
+
+              <!-- 1. Detailed outline bullets with seekable timestamps -->
+              {% if group.points %}
+              <div class="px-4 pb-2 pt-1 border-t border-slate-50">
+                <ol class="space-y-1 mt-1">
+                  {% for point in group.points %}
+                  <li
+                    class="outline-point flex items-start gap-2 text-slate-700 text-sm leading-relaxed rounded-md px-1.5 py-1 -mx-1.5 transition-colors duration-150"
+                    data-start="{{ point.timestamp_sec }}"
+                    data-end="{{ point.end_timestamp_sec }}"
+                  >
+                    <span class="outline-point-badge shrink-0 w-4 h-4 rounded-full bg-brand-50 text-brand-600 text-xs font-bold flex items-center justify-center mt-0.5 border border-brand-200 transition-colors duration-150">{{ loop.index }}</span>
+                    <button
+                      onclick="seekVideo({{ point.timestamp_sec }})"
+                      class="vs-outline-point-ts shrink-0 mt-0.5"
+                      title="Seek to ~{{ point.timestamp_display }}"
+                      aria-label="Seek to approximately {{ point.timestamp_display }}"
+                    >~{{ point.timestamp_display }}</button>
+                    <span class="outline-point-text">{{ point.text }}</span>
+                  </li>
+                  {% endfor %}
+                </ol>
+              </div>
+              {% endif %}
+
+              <!-- 2. Chapter summary -->
+              {% if chapter.summary %}
+              <div class="px-4 py-2.5 border-t border-slate-50">
+                <p class="vs-chapter-summary">{{ chapter.summary }}</p>
+              </div>
+              {% endif %}
+
+              <!-- 3. Key points -->
+              {% if chapter.key_points %}
+              <div class="px-4 pb-3 pt-2 border-t border-slate-50">
+                <ul class="space-y-1.5">
+                  {% for point in chapter.key_points %}
+                  <li class="flex items-start gap-2 text-xs text-slate-600 leading-relaxed">
+                    <svg class="w-3.5 h-3.5 text-brand-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>{{ point }}</span>
+                  </li>
+                  {% endfor %}
+                </ul>
+              </div>
+              {% endif %}
+
+              <!-- 4. Collapsible transcript -->
+              {% if chapter.transcript_segment %}
+              <div class="border-t border-slate-100 px-4">
+                <button
+                  @click.stop="transcriptOpen = !transcriptOpen"
+                  class="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 py-2.5 transition-colors focus:outline-none w-full"
+                  :aria-expanded="transcriptOpen"
+                  aria-controls="transcript-{{ chapter.chapter_id }}"
+                >
+                  <svg
+                    class="w-3.5 h-3.5 transition-transform duration-150"
+                    :class="{ 'rotate-90': transcriptOpen }"
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span x-text="transcriptOpen ? 'Hide transcript' : 'View transcript{% if line_count > 0 %} ({{ line_count }} lines){% endif %}'"></span>
+                </button>
+                <div
+                  id="transcript-{{ chapter.chapter_id }}"
+                  x-show="transcriptOpen"
+                  x-cloak
+                  x-transition:enter="transition-opacity duration-150"
+                  x-transition:enter-start="opacity-0"
+                  x-transition:enter-end="opacity-100"
+                  class="pb-4"
+                >
+                  <p class="text-xs text-slate-500 leading-relaxed font-mono bg-slate-50 rounded-lg px-3 py-2.5 whitespace-pre-wrap">{{ chapter.transcript_segment }}</p>
+                </div>
+              </div>
+              {% endif %}
+
+            </div><!-- end expandable body -->
+          </div><!-- end chapter-card -->
+
+          {% endfor %}
+        </div><!-- end #chapter-list -->
+
+      </div><!-- end x-data allExpanded / #summary-text-detailed -->
+
+      {% elif detailed_outline_groups %}
+      <!-- Ungrouped outline (outline exists but no chapters) -->
+      <ol id="summary-text-detailed" class="space-y-2">
+        {% for point in detailed_outline_groups[0].points %}
+        <li class="flex items-start gap-3 text-slate-700 text-sm leading-relaxed">
+          <span class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{{ loop.index }}</span>
+          <span>{{ point }}</span>
+        </li>
+        {% endfor %}
       </ol>
+
       {% else %}
-      <p class="text-slate-400 italic text-sm">Detailed outline not available.</p>
+      <p class="text-slate-400 italic text-sm mb-4">Detailed outline not available.</p>
       {% endif %}
-    </div>
 
-  </div><!-- end summary-content-container -->
+      <!-- Chapter extraction failed (outline available but no chapters) -->
+      {% if not has_chapters and summaries.detailed %}
+      <div class="mt-6 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3.5 text-sm">
+        <svg class="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+        </svg>
+        <div>
+          <p class="font-semibold text-amber-900">Chapter extraction was not completed</p>
+          <p class="text-amber-700 text-xs mt-0.5">Use the Regenerate button on the right to try again.</p>
+        </div>
+      </div>
+      {% endif %}
 
-</div>
+    </div><!-- end detailed tab pane -->
+
+  </div><!-- end scrollable content wrapper -->
+
+</div><!-- end x-data summary block -->
 {% endif %}
 
 <!-- ================================================================
-     SMART CHAPTERS
+     FALLBACK: chapters only (no summaries at all)
      ================================================================ -->
-{% if has_chapters %}
-<div id="chapters-section" x-data="{ allExpanded: false }">
+{% if not has_summaries %}
+  {% if has_chapters %}
+  <div id="chapters-section" x-data="{ allExpanded: false }">
 
-  <!-- Section header with Expand/Collapse All -->
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-xl font-bold text-slate-900">
-      Chapters
-      <span class="ml-2 text-sm font-normal text-slate-400">({{ chapters | length }})</span>
-    </h2>
-    <button
-      @click="allExpanded = !allExpanded"
-      class="flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 rounded px-2 py-1"
-    >
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path x-show="!allExpanded" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-        <path x-show="allExpanded" x-cloak stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
-      </svg>
-      <span x-text="allExpanded ? 'Collapse all' : 'Expand all'"></span>
-    </button>
-  </div>
+    <!-- Section header with Expand/Collapse All -->
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xl font-bold text-slate-900">
+        Chapters
+        <span class="ml-2 text-sm font-normal text-slate-400">({{ chapters | length }})</span>
+      </h2>
+      <button
+        @click="allExpanded = !allExpanded"
+        class="flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 rounded px-2 py-1"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path x-show="!allExpanded" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          <path x-show="allExpanded" x-cloak stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+        </svg>
+        <span x-text="allExpanded ? 'Collapse all' : 'Expand all'"></span>
+      </button>
+    </div>
 
-  <!-- Mini timeline bar -->
-  {% if total_duration and total_duration > 0 %}
-  <div class="mb-5">
-    <div class="vs-timeline mb-1" role="group" aria-label="Video chapter timeline">
-      {% set tl_colors = ['#0284c7','#0369a1','#0ea5e9','#38bdf8','#7dd3fc','#2563eb','#1d4ed8','#3b82f6'] %}
+    <!-- Mini timeline bar -->
+    {% if total_duration and total_duration > 0 %}
+    <div class="mb-5">
+      <div class="vs-timeline mb-1" role="group" aria-label="Video chapter timeline">
+        {% set tl_colors = ['#0284c7','#0369a1','#0ea5e9','#38bdf8','#7dd3fc','#2563eb','#1d4ed8','#3b82f6'] %}
+        {% for chapter in chapters %}
+        {% set pct_left  = (chapter.start_time_sec / total_duration * 100) | round(2) %}
+        {% set pct_width = ((chapter.end_time_sec - chapter.start_time_sec) / total_duration * 100) | round(2) %}
+        {% set tl_color  = tl_colors[loop.index0 % (tl_colors | length)] %}
+        <div
+          class="vs-timeline-segment"
+          style="left:{{ pct_left }}%; width:{{ [pct_width, 1] | max }}%; background:{{ tl_color }};"
+          data-start="{{ chapter.start_time_sec }}"
+          data-chapter-id="{{ chapter.chapter_id }}"
+          title="Ch.{{ loop.index }}: {{ chapter.title }} ({{ chapter.start_display }})"
+          role="button"
+          tabindex="0"
+          aria-label="Jump to chapter {{ loop.index }}: {{ chapter.title }}"
+        ></div>
+        {% endfor %}
+      </div>
+      <div class="flex justify-between text-xs text-slate-400 px-0.5">
+        <span>0:00</span>
+        {% if video and video.duration_sec %}
+        <span>{{ (video.duration_sec // 60) }}:{{ '%02d' % (video.duration_sec % 60) }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Chapter cards list -->
+    <div class="space-y-3" id="chapter-list">
       {% for chapter in chapters %}
-      {% set pct_left  = (chapter.start_time_sec / total_duration * 100) | round(2) %}
-      {% set pct_width = ((chapter.end_time_sec - chapter.start_time_sec) / total_duration * 100) | round(2) %}
-      {% set tl_color  = tl_colors[loop.index0 % (tl_colors | length)] %}
-      <div
-        class="vs-timeline-segment"
-        style="left:{{ pct_left }}%; width:{{ [pct_width, 1] | max }}%; background:{{ tl_color }};"
-        data-start="{{ chapter.start_time_sec }}"
-        data-chapter-id="{{ chapter.chapter_id }}"
-        title="Ch.{{ loop.index }}: {{ chapter.title }} ({{ chapter.start_display }})"
-        role="button"
-        tabindex="0"
-        aria-label="Jump to chapter {{ loop.index }}: {{ chapter.title }}"
-      ></div>
+      {% set loop_index = loop.index %}
+      {% include "partials/chapter_card.html" %}
       {% endfor %}
     </div>
-    <div class="flex justify-between text-xs text-slate-400 px-0.5">
-      <span>0:00</span>
-      {% if video and video.duration_sec %}
-      <span>{{ (video.duration_sec // 60) }}:{{ '%02d' % (video.duration_sec % 60) }}</span>
-      {% endif %}
+
+  </div>
+  {% else %}
+  <!-- Neither available -->
+  <div class="flex flex-col items-center justify-center py-16 text-center">
+    <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+      <svg class="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
     </div>
+    <p class="text-slate-500 font-medium">No results available</p>
+    <p class="text-slate-400 text-sm mt-1">Try regenerating with a new focus prompt.</p>
   </div>
   {% endif %}
-
-  <!-- Chapter cards list -->
-  <div class="space-y-3" id="chapter-list">
-    {% for chapter in chapters %}
-    {% set loop_index = loop.index %}
-    {% include "partials/chapter_card.html" %}
-    {% endfor %}
-  </div>
-
-</div>
-{% elif not has_summaries %}
-<!-- Neither available -->
-<div class="flex flex-col items-center justify-center py-16 text-center">
-  <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-    <svg class="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-  </div>
-  <p class="text-slate-500 font-medium">No results available</p>
-  <p class="text-slate-400 text-sm mt-1">Try regenerating with a new focus prompt.</p>
-</div>
-{% endif %}
-
-<!-- Chapters failed but summaries available -->
-{% if not has_chapters and has_summaries %}
-<div class="mt-5 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3.5 text-sm">
-  <svg class="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
-    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-  </svg>
-  <div>
-    <p class="font-semibold text-amber-900">Chapter extraction was not completed</p>
-    <p class="text-amber-700 text-xs mt-0.5">Use the Regenerate button on the right to try again.</p>
-  </div>
-</div>
 {% endif %}
 
 <script>

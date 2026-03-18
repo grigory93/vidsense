@@ -14,6 +14,38 @@
   let highlightInterval = null;
   let isPlaying = false;
 
+  // Track the last element scrolled to so we only call scrollIntoView on
+  // transition (inactive→active), never on every tick.
+  let lastActiveCard   = null;
+  let lastActiveBullet = null;
+  /** Bumped on seek/pause to drop stale deferred scrolls; bumped when scheduling so newer work wins */
+  let scrollGen = 0;
+
+  function bumpScrollGen() {
+    scrollGen += 1;
+  }
+
+  /**
+   * After switching to Detailed tab, Alpine applies x-show on microtasks + layout on rAF.
+   * Run fn after that so scrollIntoView sees real geometry.
+   */
+  function runAfterDetailedTabLayout(tabJustSwitched, fn) {
+    const gen = ++scrollGen;
+    const run = function () {
+      if (gen !== scrollGen) return;
+      fn();
+    };
+    if (tabJustSwitched) {
+      queueMicrotask(function () {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(run);
+        });
+      });
+    } else {
+      run();
+    }
+  }
+
   // Called by the YouTube IFrame API once it loads
   window.onYouTubeIframeAPIReady = function () {
     const container = document.getElementById('yt-player');
@@ -49,6 +81,10 @@
       startHighlightLoop();
     } else {
       stopHighlightLoop();
+      bumpScrollGen();
+      // Reset trackers so the next play/seek fires scroll immediately.
+      lastActiveCard   = null;
+      lastActiveBullet = null;
     }
   }
 
@@ -72,19 +108,57 @@
     if (!player || typeof player.getCurrentTime !== 'function') return;
     const currentTime = player.getCurrentTime();
 
+    // --- Bullets first: they are the finest-grained active element ---
+    // If a bullet is active, it handles scrolling; chapter-card scroll
+    // is suppressed to prevent the two from fighting each other.
+    let activeBulletFound = false;
+    const bullets = document.querySelectorAll('.outline-point');
+
+    bullets.forEach(function (bullet) {
+      const start    = parseInt(bullet.dataset.start, 10);
+      const end      = parseInt(bullet.dataset.end, 10);
+      const isActive = currentTime >= start && currentTime < end;
+
+      if (isActive) {
+        activeBulletFound = true;
+        bullet.classList.add('is-active-bullet');
+        // Scroll only on transition (bullet changed), not on every tick.
+        if (isPlaying && bullet !== lastActiveBullet) {
+          lastActiveBullet = bullet;
+          if (!isCardVisible(bullet)) {
+            bullet.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      } else {
+        bullet.classList.remove('is-active-bullet');
+      }
+    });
+
+    // --- Chapter cards ---
     const cards    = document.querySelectorAll('.chapter-card');
     const segments = document.querySelectorAll('.vs-timeline-segment');
 
     cards.forEach(function (card, idx) {
-      const start   = parseInt(card.dataset.start, 10);
-      const end     = parseInt(card.dataset.end, 10);
+      const start    = parseInt(card.dataset.start, 10);
+      const end      = parseInt(card.dataset.end, 10);
       const isActive = currentTime >= start && currentTime < end;
 
       if (isActive) {
         card.classList.add('is-active-chapter');
-        // Auto-scroll only while playing and card is fully out of view
-        if (isPlaying && !isCardVisible(card)) {
-          card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        // Only scroll to the chapter card when:
+        //  - playback is active
+        //  - no bullet is already scrolling (bullets are finer-grained)
+        //  - this is a new active card (transition, not every tick)
+        if (isPlaying && !activeBulletFound && card !== lastActiveCard) {
+          var switched =
+            typeof window.vsEnsureDetailedTab === 'function' &&
+            window.vsEnsureDetailedTab();
+          runAfterDetailedTabLayout(switched, function () {
+            lastActiveCard = card;
+            if (!isCardVisible(card)) {
+              card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          });
         }
         if (segments[idx]) segments[idx].classList.add('is-active-segment');
       } else {
@@ -127,6 +201,10 @@
   /** Seek the player to a given timestamp in seconds. */
   window.seekVideo = function (seconds) {
     if (player && typeof player.seekTo === 'function') {
+      bumpScrollGen();
+      // Reset trackers so the next poll tick scrolls to the new position.
+      lastActiveCard   = null;
+      lastActiveBullet = null;
       player.seekTo(seconds, true);
       player.playVideo();
     }

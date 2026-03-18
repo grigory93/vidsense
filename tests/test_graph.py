@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -38,6 +39,22 @@ def _make_llm(return_value):
     return llm
 
 
+def _make_session_factory():
+    """Return an async context-manager factory yielding a mock DB session."""
+    session = MagicMock()
+    session.add = MagicMock()
+    session.commit = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=None)
+    session.execute = AsyncMock(return_value=execute_result)
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    return factory
+
+
 def _make_run():
     run = MagicMock()
     run.id = 1
@@ -59,14 +76,14 @@ def _make_session():
 @pytest.mark.asyncio
 async def test_validate_input_passes_with_transcript():
     ts = _make_transcript_source("Some transcript text.")
-    state = {"transcript_source": ts, "errors": []}
+    state = {"transcript_source": ts, "errors": [], "run_id": 1, "session_factory": _make_session_factory()}
     result = await validate_input_node(state)
     assert result.get("pipeline_failed") is False
 
 
 @pytest.mark.asyncio
 async def test_validate_input_fails_without_transcript():
-    state = {"transcript_source": None, "errors": []}
+    state = {"transcript_source": None, "errors": [], "run_id": 1, "session_factory": _make_session_factory()}
     result = await validate_input_node(state)
     assert result.get("pipeline_failed") is True
     assert len(result.get("errors", [])) > 0
@@ -75,7 +92,7 @@ async def test_validate_input_fails_without_transcript():
 @pytest.mark.asyncio
 async def test_validate_input_fails_with_empty_transcript():
     ts = _make_transcript_source("   ")
-    state = {"transcript_source": ts, "errors": []}
+    state = {"transcript_source": ts, "errors": [], "run_id": 1, "session_factory": _make_session_factory()}
     result = await validate_input_node(state)
     assert result.get("pipeline_failed") is True
 
@@ -100,6 +117,8 @@ async def test_gen_summaries_returns_result():
         "focus_prompt": None,
         "pipeline_failed": False,
         "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
     }
     result = await gen_summaries_node(state)
     assert result["summary_result"] == expected
@@ -130,6 +149,8 @@ async def test_gen_summaries_records_error_on_failure():
         "focus_prompt": None,
         "pipeline_failed": False,
         "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
     }
     result = await gen_summaries_node(state)
     assert result["summary_result"] is None
@@ -162,6 +183,8 @@ async def test_extract_chapters_returns_result():
         "focus_prompt": None,
         "pipeline_failed": False,
         "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
     }
     result = await extract_chapters_node(state)
     assert result["chapters_result"] == expected
