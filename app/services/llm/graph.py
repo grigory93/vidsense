@@ -2,11 +2,10 @@
 LangGraph StateGraph definition for VidSense processing pipeline.
 
 Graph topology:
-  START → validate_input → gen_summaries      → finalize_run → END
-                         → extract_chapters   → finalize_run
-                         → extract_chapters   → extract_mind_map → finalize_run
-                         → extract_glossary   → finalize_run
-                         → embed_transcript   → finalize_run
+  START → validate_input → gen_summaries                          → finalize_run → END
+                         → extract_chapters → extract_mind_map   → finalize_run
+                         → extract_glossary                       → finalize_run
+                         → embed_transcript                       → finalize_run
 
   extract_mind_map is sequenced after extract_chapters so that chapters_result
   is available in state for chapter cross-reference enrichment in the prompt.
@@ -58,9 +57,11 @@ def _build_graph() -> StateGraph:
 
     graph.add_edge("extract_chapters", "extract_mind_map")
 
-    # All fan-in to finalize
+    # All fan-in to finalize.
+    # extract_chapters does NOT have a direct edge here — it routes through
+    # extract_mind_map so that chapters_result is populated in state before
+    # the mind map node reads it for chapter cross-reference enrichment.
     graph.add_edge("gen_summaries", "finalize_run")
-    graph.add_edge("extract_chapters", "finalize_run")
     graph.add_edge("extract_mind_map", "finalize_run")
     graph.add_edge("extract_glossary", "finalize_run")
     graph.add_edge("embed_transcript", "finalize_run")

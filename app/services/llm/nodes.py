@@ -532,7 +532,7 @@ def _find_term_occurrences(
             combined_stems = {_crude_stem(w) for w in combined_words if len(w) > 2}
             if term_stems.issubset(combined_stems):
                 if _add_hit(segments[i].get("start", 0)):
-                    break
+                    return occurrences
 
     occurrences.sort(key=lambda o: o["timestamp_sec"])
     return occurrences
