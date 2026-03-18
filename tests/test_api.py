@@ -5,16 +5,19 @@ LLM calls and YouTube ingestion are mocked.
 from __future__ import annotations
 
 import json
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.messages import AIMessage
+from sqlalchemy import select
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from sqlalchemy import StaticPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base, get_session
-from app.models.db import AnalysisRunStatus
+from app.models.db import AnalysisRunStatus, QAMessage, Video
 
 # ---------------------------------------------------------------------------
 # Test database setup
@@ -190,3 +193,128 @@ class TestAskEndpoint:
         detail = data["detail"]
         msg = (detail.get("message", "") if isinstance(detail, dict) else str(detail)).lower()
         assert "embedding" in msg or "regenerate" in msg
+
+    async def test_ask_scopes_history_by_video_id(self, client):
+        """Same conversation_id on another video must not load Q&A from other videos."""
+        uid = uuid.uuid4().hex[:10]
+        async with TestingSessionLocal() as session:
+            session.add_all(
+                [
+                    Video(youtube_id=f"v1{uid}", url="http://example.com/1"),
+                    Video(youtube_id=f"v2{uid}", url="http://example.com/2"),
+                ]
+            )
+            await session.commit()
+            v1 = (
+                await session.execute(select(Video).where(Video.youtube_id == f"v1{uid}"))
+            ).scalar_one()
+            v2 = (
+                await session.execute(select(Video).where(Video.youtube_id == f"v2{uid}"))
+            ).scalar_one()
+            session.add_all(
+                [
+                    QAMessage(
+                        video_id=v1.id,
+                        conversation_id="shared",
+                        role="user",
+                        content="SECRET_CROSS_VIDEO_LEAK_USER",
+                    ),
+                    QAMessage(
+                        video_id=v1.id,
+                        conversation_id="shared",
+                        role="assistant",
+                        content="SECRET_CROSS_VIDEO_LEAK_ASSIST",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        llm_messages: list = []
+
+        async def ainvoke_capture(msgs):
+            llm_messages[:] = list(msgs)
+            return AIMessage(content="ok")
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=ainvoke_capture)
+        mock_store = MagicMock()
+        mock_store.similarity_search = MagicMock(
+            return_value=[
+                MagicMock(page_content="chunk", metadata={"start_time_sec": 0}),
+            ]
+        )
+        mock_faiss = MagicMock()
+        mock_faiss.load_local = MagicMock(return_value=mock_store)
+
+        with (
+            patch("os.path.exists", return_value=True),
+            patch("langchain_community.vectorstores.FAISS", mock_faiss),
+            patch("app.services.llm.providers.get_embedding_model", return_value=MagicMock()),
+            patch("app.services.llm.providers.get_llm", return_value=mock_llm),
+        ):
+            resp = client.post(
+                f"/api/video/{v2.id}/ask",
+                json={"question": "Anything?", "conversation_id": "shared"},
+            )
+
+        assert resp.status_code == 200
+        blob = " ".join(
+            m.content if isinstance(getattr(m, "content", None), str) else ""
+            for m in llm_messages
+        )
+        assert "SECRET_CROSS_VIDEO_LEAK_USER" not in blob
+        assert "SECRET_CROSS_VIDEO_LEAK_ASSIST" not in blob
+
+    async def test_ask_follow_up_expands_retrieval_query(self, client):
+        """Follow-up questions should search FAISS using prior assistant text + question."""
+        uid = uuid.uuid4().hex[:10]
+        async with TestingSessionLocal() as session:
+            session.add(Video(youtube_id=f"vf{uid}", url="http://example.com/f"))
+            await session.commit()
+            v = (
+                await session.execute(select(Video).where(Video.youtube_id == f"vf{uid}"))
+            ).scalar_one()
+            session.add_all(
+                [
+                    QAMessage(
+                        video_id=v.id,
+                        conversation_id="convf",
+                        role="user",
+                        content="What is quantum foam?",
+                    ),
+                    QAMessage(
+                        video_id=v.id,
+                        conversation_id="convf",
+                        role="assistant",
+                        content="QUANTUM_FOAM_ASSISTANT_MARKER " * 20,
+                    ),
+                ]
+            )
+            await session.commit()
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="more"))
+        mock_store = MagicMock()
+        mock_store.similarity_search = MagicMock(
+            return_value=[
+                MagicMock(page_content="c", metadata={"start_time_sec": 1}),
+            ]
+        )
+        mock_faiss = MagicMock()
+        mock_faiss.load_local = MagicMock(return_value=mock_store)
+
+        with (
+            patch("os.path.exists", return_value=True),
+            patch("langchain_community.vectorstores.FAISS", mock_faiss),
+            patch("app.services.llm.providers.get_embedding_model", return_value=MagicMock()),
+            patch("app.services.llm.providers.get_llm", return_value=mock_llm),
+        ):
+            client.post(
+                f"/api/video/{v.id}/ask",
+                json={"question": "Tell me more.", "conversation_id": "convf"},
+            )
+
+        mock_store.similarity_search.assert_called_once()
+        rq = mock_store.similarity_search.call_args[0][0]
+        assert "QUANTUM_FOAM_ASSISTANT_MARKER" in rq
+        assert "Tell me more." in rq
