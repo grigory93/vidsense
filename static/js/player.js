@@ -18,6 +18,33 @@
   // transition (inactive→active), never on every tick.
   let lastActiveCard   = null;
   let lastActiveBullet = null;
+  /** Bumped on seek/pause to drop stale deferred scrolls; bumped when scheduling so newer work wins */
+  let scrollGen = 0;
+
+  function bumpScrollGen() {
+    scrollGen += 1;
+  }
+
+  /**
+   * After switching to Detailed tab, Alpine applies x-show on microtasks + layout on rAF.
+   * Run fn after that so scrollIntoView sees real geometry.
+   */
+  function runAfterDetailedTabLayout(tabJustSwitched, fn) {
+    const gen = ++scrollGen;
+    const run = function () {
+      if (gen !== scrollGen) return;
+      fn();
+    };
+    if (tabJustSwitched) {
+      queueMicrotask(function () {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(run);
+        });
+      });
+    } else {
+      run();
+    }
+  }
 
   // Called by the YouTube IFrame API once it loads
   window.onYouTubeIframeAPIReady = function () {
@@ -54,6 +81,7 @@
       startHighlightLoop();
     } else {
       stopHighlightLoop();
+      bumpScrollGen();
       // Reset trackers so the next play/seek fires scroll immediately.
       lastActiveCard   = null;
       lastActiveBullet = null;
@@ -122,13 +150,15 @@
         //  - no bullet is already scrolling (bullets are finer-grained)
         //  - this is a new active card (transition, not every tick)
         if (isPlaying && !activeBulletFound && card !== lastActiveCard) {
-          lastActiveCard = card;
-          if (typeof window.vsEnsureDetailedTab === 'function') {
+          var switched =
+            typeof window.vsEnsureDetailedTab === 'function' &&
             window.vsEnsureDetailedTab();
-          }
-          if (!isCardVisible(card)) {
-            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
+          runAfterDetailedTabLayout(switched, function () {
+            lastActiveCard = card;
+            if (!isCardVisible(card)) {
+              card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          });
         }
         if (segments[idx]) segments[idx].classList.add('is-active-segment');
       } else {
@@ -171,6 +201,7 @@
   /** Seek the player to a given timestamp in seconds. */
   window.seekVideo = function (seconds) {
     if (player && typeof player.seekTo === 'function') {
+      bumpScrollGen();
       // Reset trackers so the next poll tick scrolls to the new position.
       lastActiveCard   = null;
       lastActiveBullet = null;

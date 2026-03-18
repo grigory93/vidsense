@@ -154,8 +154,7 @@
     const cards = Array.from(document.querySelectorAll('.chapter-card'));
     if (!cards.length) return;
 
-    // Ensure the Detailed Outline tab is active so chapter cards are visible
-    ensureDetailedTabActive();
+    const tabSwitched = ensureDetailedTabActive();
 
     const activeIdx = cards.findIndex(function (c) {
       return c.classList.contains('is-active-chapter');
@@ -170,7 +169,18 @@
     if (!isNaN(start) && window.seekVideo) {
       window.seekVideo(start);
     }
-    next.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    function scrollToCard() {
+      next.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    if (tabSwitched) {
+      queueMicrotask(function () {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(scrollToCard);
+        });
+      });
+    } else {
+      scrollToCard();
+    }
   }
 
   /**
@@ -178,13 +188,18 @@
    * and the current tab is something else. This ensures j/k navigation is
    * meaningful — the user can see the card that gets highlighted.
    */
+  /**
+   * @returns {boolean} true if the tab was switched to detailed (DOM not yet updated — Alpine batches)
+   */
   function ensureDetailedTabActive() {
     const summaryRoot = document.querySelector('[x-data*="activeTab"]');
-    if (!summaryRoot) return;
+    if (!summaryRoot) return false;
     const data = summaryRoot._x_dataStack && summaryRoot._x_dataStack[0];
     if (data && typeof data.activeTab !== 'undefined' && data.activeTab !== 'detailed') {
       data.activeTab = 'detailed';
+      return true;
     }
+    return false;
   }
 
   function togglePlayPause() {
@@ -223,9 +238,10 @@
   /**
    * Expose tab-switcher globally so player.js can call it when
    * auto-scrolling to an active chapter that lives inside the detailed tab.
+   * @returns {boolean} true if tab was just switched (caller should defer until layout)
    */
   window.vsEnsureDetailedTab = function () {
-    ensureDetailedTabActive();
+    return ensureDetailedTabActive();
   };
 
   document.addEventListener('click', function (e) {
