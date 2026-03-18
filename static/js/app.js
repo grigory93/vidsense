@@ -259,3 +259,192 @@
   });
 
 })();
+
+// ------------------------------------------------------------------
+// V2 Alpine components (global scope — must be defined before Alpine
+// processes HTMX-swapped content)
+// ------------------------------------------------------------------
+
+function vsGlossary() {
+  return {
+    terms: [],
+    search: '',
+    categories: [],
+    activeCategories: [],
+    init() {
+      var el = document.getElementById('vs-glossary-data');
+      if (el) {
+        try { this.terms = JSON.parse(el.textContent); } catch (e) { /* ignore */ }
+      }
+      var cats = [];
+      var seen = {};
+      for (var i = 0; i < this.terms.length; i++) {
+        var c = this.terms[i].category;
+        if (c && !seen[c]) { seen[c] = true; cats.push(c); }
+      }
+      this.categories = cats.sort();
+    },
+    toggleCategory(cat) {
+      var idx = this.activeCategories.indexOf(cat);
+      if (idx >= 0) this.activeCategories.splice(idx, 1);
+      else this.activeCategories.push(cat);
+    },
+    filtered() {
+      var result = this.terms;
+      if (this.search.trim()) {
+        var q = this.search.toLowerCase();
+        result = result.filter(function (t) {
+          return t.term.toLowerCase().indexOf(q) !== -1 ||
+                 t.definition.toLowerCase().indexOf(q) !== -1;
+        });
+      }
+      if (this.activeCategories.length) {
+        var ac = this.activeCategories;
+        result = result.filter(function (t) { return ac.indexOf(t.category) !== -1; });
+      }
+      return result;
+    }
+  };
+}
+
+function vsQA(videoId) {
+  return {
+    videoId: videoId,
+    question: '',
+    messages: [],
+    loading: false,
+    conversationId: null,
+    suggestedQuestions: [
+      'What are the main topics covered?',
+      'Summarize the key arguments',
+      'What conclusions are drawn?'
+    ],
+    async sendQuestion() {
+      var q = this.question.trim();
+      if (!q || this.loading) return;
+      this.messages.push({ role: 'user', content: q, citations: [] });
+      this.question = '';
+      this.loading = true;
+      this.$nextTick(() => {
+        if (this.$refs.messageList) this.$refs.messageList.scrollTop = this.$refs.messageList.scrollHeight;
+      });
+      try {
+        var resp = await fetch('/api/video/' + this.videoId + '/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q, conversation_id: this.conversationId })
+        });
+        var data = await resp.json();
+        if (resp.ok) {
+          this.conversationId = data.conversation_id;
+          this.messages.push({ role: 'assistant', content: data.answer, citations: data.citations || [] });
+        } else {
+          this.messages.push({ role: 'assistant', content: (data.detail && data.detail.message) || 'Sorry, something went wrong.', citations: [] });
+        }
+      } catch (e) {
+        this.messages.push({ role: 'assistant', content: 'Network error. Please try again.', citations: [] });
+      } finally {
+        this.loading = false;
+        this.$nextTick(() => {
+          if (this.$refs.messageList) this.$refs.messageList.scrollTop = this.$refs.messageList.scrollHeight;
+        });
+      }
+    }
+  };
+}
+
+function vsMindMap() {
+  return {
+    cy: null,
+    init() {
+      window.__vsMindMapRender = () => this._renderMindMap();
+      this.$nextTick(() => {
+        requestAnimationFrame(() => {
+          if (window.__vsActiveView === 'mind_map') this._renderMindMap();
+        });
+      });
+    },
+    _renderMindMap() {
+      var self = this;
+      var maxAttempts = 40;
+      var tick = function (attempt) {
+        if (typeof cytoscape === 'undefined') {
+          if (attempt < maxAttempts) setTimeout(function () { tick(attempt + 1); }, 50);
+          return;
+        }
+        var container = document.getElementById('vs-mind-map-container');
+        var dataEl = document.getElementById('vs-mind-map-data');
+        if (!container || !dataEl) return;
+        if (container.clientWidth < 20 || container.clientHeight < 20) {
+          if (attempt < maxAttempts) setTimeout(function () { tick(attempt + 1); }, 50);
+          return;
+        }
+        var data;
+        try { data = JSON.parse(dataEl.textContent); } catch (e) { return; }
+
+        var typeColors = {
+          concept: '#2563eb', person: '#16a34a', technology: '#9333ea',
+          event: '#ea580c', theory: '#0891b2', methodology: '#d946ef'
+        };
+
+        var elements = [];
+        (data.nodes || []).forEach(function (n) {
+          var id = n.node_id || n.id;
+          if (!id) return;
+          elements.push({
+            data: {
+              id: String(id),
+              label: n.label || id,
+              type: n.type || 'concept',
+              description: n.description || '',
+              chapter_ids: n.chapter_ids || [],
+              color: typeColors[n.type] || '#64748b'
+            }
+          });
+        });
+        (data.edges || []).forEach(function (e) {
+          elements.push({
+            data: {
+              source: String(e.source),
+              target: String(e.target),
+              label: e.relationship || ''
+            }
+          });
+        });
+
+        if (!elements.length) return;
+
+        if (self.cy) {
+          self.cy.resize();
+          self.cy.fit(undefined, 48);
+          return;
+        }
+
+        self.cy = cytoscape({
+          container: container,
+          elements: elements,
+          style: [
+            { selector: 'node', style: {
+              'label': 'data(label)', 'background-color': 'data(color)',
+              'color': '#334155', 'font-size': '11px', 'text-valign': 'bottom',
+              'text-margin-y': 6, 'width': 32, 'height': 32,
+              'border-width': 2, 'border-color': '#e2e8f0'
+            }},
+            { selector: 'edge', style: {
+              'label': 'data(label)', 'font-size': '9px', 'color': '#94a3b8',
+              'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1',
+              'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
+              'width': 1.5
+            }},
+            { selector: 'node:selected', style: {
+              'border-color': '#2563eb', 'border-width': 3
+            }}
+          ],
+          layout: { name: 'cose', animate: true, animationDuration: 500, nodeRepulsion: 8000 }
+        });
+        self.cy.fit(undefined, 48);
+      };
+      tick(0);
+    }
+  };
+}

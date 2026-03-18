@@ -24,6 +24,8 @@ wheels/
 # Database (local SQLite, do not commit)
 vidsense.db
 *.db
+*.db-shm
+*.db-wal
 
 # Environment
 .env

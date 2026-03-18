@@ -36,7 +36,17 @@
      TOP-LEVEL VIEW TABS: Read | Mind Map | Glossary | Ask
      ================================================================ -->
 <div x-data="{ activeView: (window.__vsActiveView || 'read') }"
-     x-init="$watch('activeView', v => window.__vsActiveView = v)">
+     x-init="
+       window.__vsActiveView = activeView;
+       $watch('activeView', v => {
+         window.__vsActiveView = v;
+         if (v === 'mind_map') {
+           $nextTick(() => requestAnimationFrame(() => {
+             if (typeof window.__vsMindMapRender === 'function') window.__vsMindMapRender();
+           }));
+         }
+       });
+     ">
 
   <nav class="flex gap-1 mb-6 border-b border-slate-200 -mx-1 px-1" role="tablist" aria-label="View tabs">
     <template x-for="tab in [
@@ -715,141 +725,4 @@
 
 </div><!-- /top-level view tabs wrapper -->
 
-<script>
-  window.__vsProcessingComplete = true;
-
-  function vsGlossary() {
-    return {
-      terms: [],
-      search: '',
-      categories: [],
-      activeCategories: [],
-      init() {
-        const el = document.getElementById('vs-glossary-data');
-        if (el) {
-          try { this.terms = JSON.parse(el.textContent); } catch(e) {}
-        }
-        const cats = [...new Set(this.terms.map(t => t.category))];
-        this.categories = cats.sort();
-      },
-      toggleCategory(cat) {
-        const idx = this.activeCategories.indexOf(cat);
-        if (idx >= 0) this.activeCategories.splice(idx, 1);
-        else this.activeCategories.push(cat);
-      },
-      filtered() {
-        let result = this.terms;
-        if (this.search.trim()) {
-          const q = this.search.toLowerCase();
-          result = result.filter(t => t.term.toLowerCase().includes(q) || t.definition.toLowerCase().includes(q));
-        }
-        if (this.activeCategories.length) {
-          result = result.filter(t => this.activeCategories.includes(t.category));
-        }
-        return result;
-      }
-    };
-  }
-
-  function vsQA(videoId) {
-    return {
-      videoId,
-      question: '',
-      messages: [],
-      loading: false,
-      conversationId: null,
-      suggestedQuestions: [
-        'What are the main topics covered?',
-        'Summarize the key arguments',
-        'What conclusions are drawn?'
-      ],
-      async sendQuestion() {
-        const q = this.question.trim();
-        if (!q || this.loading) return;
-        this.messages.push({ role: 'user', content: q, citations: [] });
-        this.question = '';
-        this.loading = true;
-        this.$nextTick(() => {
-          if (this.$refs.messageList) this.$refs.messageList.scrollTop = this.$refs.messageList.scrollHeight;
-        });
-        try {
-          const resp = await fetch(`/api/video/${this.videoId}/ask`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: q, conversation_id: this.conversationId })
-          });
-          const data = await resp.json();
-          if (resp.ok) {
-            this.conversationId = data.conversation_id;
-            this.messages.push({ role: 'assistant', content: data.answer, citations: data.citations || [] });
-          } else {
-            this.messages.push({ role: 'assistant', content: (data.detail && data.detail.message) || 'Sorry, something went wrong.', citations: [] });
-          }
-        } catch(e) {
-          this.messages.push({ role: 'assistant', content: 'Network error. Please try again.', citations: [] });
-        } finally {
-          this.loading = false;
-          this.$nextTick(() => {
-            if (this.$refs.messageList) this.$refs.messageList.scrollTop = this.$refs.messageList.scrollHeight;
-          });
-        }
-      }
-    };
-  }
-
-  function vsMindMap() {
-    return {
-      cy: null,
-      init() {
-        const el = document.getElementById('vs-mind-map-data');
-        if (!el || typeof cytoscape === 'undefined') return;
-        let data;
-        try { data = JSON.parse(el.textContent); } catch(e) { return; }
-
-        const typeColors = {
-          concept: '#2563eb', person: '#16a34a', technology: '#9333ea',
-          event: '#ea580c', theory: '#0891b2', methodology: '#d946ef'
-        };
-
-        const elements = [];
-        (data.nodes || []).forEach(n => {
-          elements.push({
-            data: {
-              id: n.node_id, label: n.label, type: n.type,
-              description: n.description, chapter_ids: n.chapter_ids || [],
-              color: typeColors[n.type] || '#64748b'
-            }
-          });
-        });
-        (data.edges || []).forEach(e => {
-          elements.push({
-            data: { source: e.source, target: e.target, label: e.relationship }
-          });
-        });
-
-        this.cy = cytoscape({
-          container: document.getElementById('vs-mind-map-container'),
-          elements,
-          style: [
-            { selector: 'node', style: {
-              'label': 'data(label)', 'background-color': 'data(color)',
-              'color': '#334155', 'font-size': '11px', 'text-valign': 'bottom',
-              'text-margin-y': 6, 'width': 32, 'height': 32,
-              'border-width': 2, 'border-color': '#e2e8f0'
-            }},
-            { selector: 'edge', style: {
-              'label': 'data(label)', 'font-size': '9px', 'color': '#94a3b8',
-              'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1',
-              'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
-              'width': 1.5
-            }},
-            { selector: 'node:selected', style: {
-              'border-color': '#2563eb', 'border-width': 3
-            }}
-          ],
-          layout: { name: 'cose', animate: true, animationDuration: 500, nodeRepulsion: 8000 }
-        });
-      }
-    };
-  }
-</script>
+<script>window.__vsProcessingComplete = true;</script>
