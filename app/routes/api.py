@@ -421,7 +421,7 @@ async def ask_question(
 
     try:
         from langchain_community.vectorstores import FAISS
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
         from app.services.llm.providers import TASK_QA, get_embedding_model, get_llm
 
@@ -430,7 +430,34 @@ async def ask_question(
             index_path, embedding_model, allow_dangerous_deserialization=True
         )
 
-        docs = store.similarity_search(question, k=5)
+        # Load history first so it can be used for query expansion below.
+        # Each turn = 1 user + 1 assistant message, so limit by 2 * turns.
+        # Scope by video_id so a reused conversation_id cannot leak history from another video.
+        history_rows = (
+            await session.execute(
+                select(QAMessage)
+                .where(
+                    QAMessage.video_id == video_id,
+                    QAMessage.conversation_id == conversation_id,
+                )
+                .order_by(QAMessage.created_at.desc())
+                .limit(app_settings.qa_max_history * 2)
+            )
+        ).scalars().all()
+        history_rows.reverse()
+
+        # Expand the retrieval query with the last assistant answer so that
+        # follow-up questions ("tell me more about that", "explain the second
+        # point") resolve against the correct transcript chunks instead of
+        # matching only on the thin follow-up phrasing.
+        retrieval_query = question
+        last_assistant_content = next(
+            (r.content for r in reversed(history_rows) if r.role == "assistant"), None
+        )
+        if last_assistant_content:
+            retrieval_query = last_assistant_content[:500] + " " + question
+
+        docs = store.similarity_search(retrieval_query, k=5)
 
         context_parts = []
         citations = []
@@ -447,27 +474,16 @@ async def ask_question(
 
         citations.sort(key=lambda c: c["start_time_sec"])
 
-        # Each turn = 1 user + 1 assistant message, so limit by 2 * turns.
-        # Scope by video_id so a reused conversation_id cannot leak history from another video.
-        history_rows = (
-            await session.execute(
-                select(QAMessage)
-                .where(
-                    QAMessage.video_id == video_id,
-                    QAMessage.conversation_id == conversation_id,
-                )
-                .order_by(QAMessage.created_at.desc())
-                .limit(app_settings.qa_max_history * 2)
-            )
-        ).scalars().all()
-        history_rows.reverse()
-
+        # System message: role description only — no context chunks here.
+        # Injecting context into the system message would make it shared
+        # across the entire history, causing prior turns to appear grounded
+        # in different chunks than what was actually retrieved for them.
         messages = [
             SystemMessage(content=(
                 "You are a helpful assistant answering questions about a video based "
-                "on its transcript. Ground your answers strictly in the provided context. "
-                "If the context doesn't contain enough information, say so.\n\n"
-                "Context from transcript:\n" + "\n---\n".join(context_parts)
+                "on its transcript. Ground your answers strictly in the provided context "
+                "shown before each question. If the context doesn't contain enough "
+                "information, say so."
             ))
         ]
 
@@ -475,10 +491,14 @@ async def ask_question(
             if row.role == "user":
                 messages.append(HumanMessage(content=row.content))
             else:
-                from langchain_core.messages import AIMessage
                 messages.append(AIMessage(content=row.content))
 
-        messages.append(HumanMessage(content=question))
+        # Inject retrieved context immediately before the current question so
+        # it is scoped to this turn only and does not contaminate history turns.
+        messages.append(HumanMessage(content=(
+            "Context from transcript:\n" + "\n---\n".join(context_parts)
+            + f"\n\nQuestion: {question}"
+        )))
 
         llm = get_llm(task=TASK_QA)
         response = await llm.ainvoke(messages)
