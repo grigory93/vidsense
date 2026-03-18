@@ -31,9 +31,9 @@ class Settings(BaseSettings):
     # Q&A
     qa_max_history: int = Field(default=10, description="Max conversation turns to include in Q&A context")
 
-    # Database
+    # Database (path under data/ for consistency with embeddings and .gitignore)
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./vidsense.db",
+        default="sqlite+aiosqlite:///./data/vidsense.db",
         description="SQLAlchemy async database URL",
     )
 

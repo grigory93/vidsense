@@ -1,4 +1,5 @@
 import logging
+import os
 
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -55,9 +56,21 @@ async def _add_missing_columns(conn) -> None:
             pass  # column already exists
 
 
+def _ensure_database_dir() -> None:
+    """Create parent directory of the database file so SQLite can create the file."""
+    url = settings.database_url
+    if "sqlite" in url and "///" in url:
+        path = url.split("///", 1)[-1].split("?")[0].lstrip("./")
+        if path and path != ":memory:":
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+
+
 async def init_db() -> None:
     from app.models import db  # noqa: F401 — ensure models are registered
 
+    _ensure_database_dir()
     async with engine.begin() as conn:
         # WAL mode allows concurrent readers + one writer without "database is locked"
         await conn.execute(text("PRAGMA journal_mode=WAL"))

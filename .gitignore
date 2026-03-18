@@ -22,6 +22,7 @@ wheels/
 *.egg
 
 # Database (local SQLite, do not commit)
+data/
 vidsense.db
 *.db
 *.db-shm
