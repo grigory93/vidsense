@@ -158,3 +158,35 @@ class TestRegenerateEndpoint:
             json={"focus_prompt": "Focus on the technical details"},
         )
         assert resp.status_code == 404  # No such video; validates input schema is accepted
+
+
+# ---------------------------------------------------------------------------
+# Tests: POST /api/video/{id}/ask
+# ---------------------------------------------------------------------------
+
+
+class TestAskEndpoint:
+    def test_empty_question_returns_422(self, client):
+        """Question cannot be empty or only whitespace."""
+        resp = client.post("/api/video/1/ask", json={"question": ""})
+        assert resp.status_code == 422
+        resp2 = client.post("/api/video/1/ask", json={"question": "   "})
+        assert resp2.status_code == 422
+
+    def test_missing_question_returns_422(self, client):
+        resp = client.post("/api/video/1/ask", json={})
+        assert resp.status_code == 422
+
+    def test_no_embeddings_returns_404(self, client):
+        """When embeddings dir does not exist for video, returns 404."""
+        with patch("os.path.exists", return_value=False):
+            resp = client.post(
+                "/api/video/1/ask",
+                json={"question": "What is this video about?"},
+            )
+        assert resp.status_code == 404
+        data = resp.json()
+        assert "detail" in data
+        detail = data["detail"]
+        msg = (detail.get("message", "") if isinstance(detail, dict) else str(detail)).lower()
+        assert "embedding" in msg or "regenerate" in msg

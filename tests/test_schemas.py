@@ -5,6 +5,11 @@ from pydantic import ValidationError
 from app.models.schemas import (
     ChapterListSchema,
     ChapterSchema,
+    GlossaryListSchema,
+    GlossaryTermSchema,
+    MindMapEdgeSchema,
+    MindMapNodeSchema,
+    MindMapSchema,
     SummarySchema,
     _seconds_to_mmss,
 )
@@ -83,6 +88,117 @@ class TestSummarySchema:
                 executive="E",
                 detailed_outline=[],
             )
+
+
+class TestMindMapNodeSchema:
+    def test_valid_node(self):
+        n = MindMapNodeSchema(
+            node_id="n_01",
+            label="Machine Learning",
+            type="concept",
+            description="A subfield of AI.",
+            chapter_ids=["ch_01"],
+        )
+        assert n.node_id == "n_01"
+        assert n.type == "concept"
+        assert n.chapter_ids == ["ch_01"]
+
+    def test_empty_chapter_ids_default(self):
+        n = MindMapNodeSchema(
+            node_id="n_01",
+            label="Term",
+            type="concept",
+            description="Desc.",
+        )
+        assert n.chapter_ids == []
+
+
+class TestMindMapEdgeSchema:
+    def test_valid_edge(self):
+        e = MindMapEdgeSchema(
+            source="n_01",
+            target="n_02",
+            relationship="uses",
+        )
+        assert e.source == "n_01"
+        assert e.target == "n_02"
+        assert e.relationship == "uses"
+
+
+class TestMindMapSchema:
+    def test_valid_mind_map(self):
+        nodes = [
+            MindMapNodeSchema(
+                node_id="n_01",
+                label="Concept",
+                type="concept",
+                description="A concept.",
+                chapter_ids=[],
+            ),
+        ]
+        edges = [
+            MindMapEdgeSchema(source="n_01", target="n_02", relationship="relates to"),
+        ]
+        m = MindMapSchema(nodes=nodes, edges=edges)
+        assert len(m.nodes) == 1
+        assert len(m.edges) == 1
+
+    def test_empty_nodes_raises(self):
+        with pytest.raises(ValidationError):
+            MindMapSchema(nodes=[], edges=[])
+
+    def test_edges_default_empty(self):
+        nodes = [
+            MindMapNodeSchema(
+                node_id="n_01",
+                label="X",
+                type="concept",
+                description="D",
+                chapter_ids=[],
+            ),
+        ]
+        m = MindMapSchema(nodes=nodes)
+        assert m.edges == []
+
+
+class TestGlossaryTermSchema:
+    def test_valid_term(self):
+        t = GlossaryTermSchema(
+            term="API",
+            definition="Application programming interface.",
+            category="acronym",
+            related_terms=["REST"],
+        )
+        assert t.term == "API"
+        assert t.category == "acronym"
+        assert t.related_terms == ["REST"]
+
+    def test_related_terms_default_empty(self):
+        t = GlossaryTermSchema(
+            term="Term",
+            definition="Def.",
+            category="technical",
+        )
+        assert t.related_terms == []
+
+
+class TestGlossaryListSchema:
+    def test_valid_list(self):
+        terms = [
+            GlossaryTermSchema(
+                term="API",
+                definition="Application programming interface.",
+                category="acronym",
+                related_terms=[],
+            ),
+        ]
+        g = GlossaryListSchema(terms=terms)
+        assert len(g.terms) == 1
+        assert g.terms[0].term == "API"
+
+    def test_empty_terms_raises(self):
+        with pytest.raises(ValidationError):
+            GlossaryListSchema(terms=[])
 
 
 class TestSecondsToMmss:
