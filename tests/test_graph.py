@@ -112,7 +112,6 @@ async def test_gen_summaries_returns_result():
     llm = _make_llm(expected)
     ts = _make_transcript_source("Full transcript text here.")
     state = {
-        "llm": llm,
         "transcript_source": ts,
         "focus_prompt": None,
         "pipeline_failed": False,
@@ -120,7 +119,8 @@ async def test_gen_summaries_returns_result():
         "run_id": 1,
         "session_factory": _make_session_factory(),
     }
-    result = await gen_summaries_node(state)
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await gen_summaries_node(state)
     assert result["summary_result"] == expected
     assert result["summary_error"] is None
 
@@ -134,9 +134,6 @@ async def test_gen_summaries_skips_when_pipeline_failed():
 
 @pytest.mark.asyncio
 async def test_gen_summaries_records_error_on_failure():
-    from unittest.mock import AsyncMock, MagicMock
-    from pydantic import ValidationError
-
     llm = MagicMock()
     structured = MagicMock()
     structured.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
@@ -144,7 +141,6 @@ async def test_gen_summaries_records_error_on_failure():
 
     ts = _make_transcript_source("Some text.")
     state = {
-        "llm": llm,
         "transcript_source": ts,
         "focus_prompt": None,
         "pipeline_failed": False,
@@ -152,7 +148,8 @@ async def test_gen_summaries_records_error_on_failure():
         "run_id": 1,
         "session_factory": _make_session_factory(),
     }
-    result = await gen_summaries_node(state)
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await gen_summaries_node(state)
     assert result["summary_result"] is None
     assert result["summary_error"] is not None
     assert len(result["errors"]) > 0
@@ -178,7 +175,6 @@ async def test_extract_chapters_returns_result():
     llm = _make_llm(expected)
     ts = _make_transcript_source("Transcript.", segments=[{"text": "Hello", "start": 0, "duration": 5}])
     state = {
-        "llm": llm,
         "transcript_source": ts,
         "focus_prompt": None,
         "pipeline_failed": False,
@@ -186,7 +182,8 @@ async def test_extract_chapters_returns_result():
         "run_id": 1,
         "session_factory": _make_session_factory(),
     }
-    result = await extract_chapters_node(state)
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await extract_chapters_node(state)
     assert result["chapters_result"] == expected
     assert result["chapters_error"] is None
 
