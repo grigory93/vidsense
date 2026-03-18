@@ -679,8 +679,9 @@
                  :class="msg.role === 'user'
                    ? 'bg-brand-600 text-white rounded-br-sm'
                    : 'bg-slate-100 text-slate-800 rounded-bl-sm'">
-              <div class="vs-qa-msg-body whitespace-pre-wrap break-words"
-                   x-text="msg.content"></div>
+              <div class="vs-qa-msg-body break-words prose prose-sm max-w-none"
+                   :class="msg.role === 'user' ? 'prose-invert' : ''"
+                   x-html="msg.role === 'assistant' ? vsQaMarkdownToHtml(msg.content) : vsQaEscapeUserText(msg.content)"></div>
               <template x-if="msg.citations && msg.citations.length">
                 <div class="flex flex-wrap gap-1.5 mt-2 pt-2"
                      :class="msg.role === 'user' ? 'border-t border-brand-500/30' : 'border-t border-slate-200'">
