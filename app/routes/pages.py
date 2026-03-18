@@ -285,8 +285,12 @@ async def partial_status(
                     # boundary (which is the next chapter's start).
                     ts = chapter["start_time_sec"] + round(j * ch_dur / max(n_ch, 1))
                     ts = max(chapter["start_time_sec"], min(ts, chapter["end_time_sec"]))
-                    end_ts = chapter["start_time_sec"] + round((j + 1) * ch_dur / max(n_ch, 1))
-                    end_ts = max(ts + 1, min(end_ts, chapter["end_time_sec"]))
+                    raw_end = chapter["start_time_sec"] + round((j + 1) * ch_dur / max(n_ch, 1))
+                    raw_end = min(raw_end, chapter["end_time_sec"])
+                    # Clamp end_ts to chapter end *after* max(ts+1, ...). Doing min(end, chapter_end)
+                    # before max(ts+1, ...) makes end_ts = chapter_end+1 when ts was clamped to
+                    # chapter_end (player.js uses start <= t < end; overflow highlights next chapter).
+                    end_ts = min(chapter["end_time_sec"], max(ts + 1, raw_end))
                     enriched_pts.append(
                         {
                             "text": text,
