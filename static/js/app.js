@@ -398,6 +398,9 @@ function vsQA(videoId) {
 function vsMindMap() {
   return {
     cy: null,
+    searchQuery: '',
+    searchResults: [],
+    showDropdown: false,
     init() {
       window.__vsMindMapRender = () => this._renderMindMap();
       this.$nextTick(() => {
@@ -405,6 +408,58 @@ function vsMindMap() {
           if (window.__vsActiveView === 'mind_map') this._renderMindMap();
         });
       });
+    },
+    onSearch() {
+      var q = this.searchQuery.trim().toLowerCase();
+      if (!q) {
+        this.clearSearch();
+        return;
+      }
+      if (!this.cy) return;
+      var matches = this.cy.nodes().filter(function (n) {
+        return n.data('label').toLowerCase().includes(q)
+            || n.data('description').toLowerCase().includes(q);
+      });
+      this.cy.nodes().not(matches).style('opacity', 0.12);
+      this.cy.edges().style('opacity', 0.12);
+      matches.style('opacity', 1);
+      this.searchResults = matches.map(function (n) {
+        return { id: n.id(), label: n.data('label'), type: n.data('type') };
+      });
+      this.showDropdown = this.searchResults.length > 0;
+      if (matches.length === 1) {
+        this.cy.animate({ fit: { eles: matches, padding: 100 }, duration: 300 });
+      } else if (matches.length > 1) {
+        this.cy.animate({ fit: { eles: matches, padding: 48 }, duration: 300 });
+      }
+    },
+    clearSearch() {
+      this.searchQuery = '';
+      this.searchResults = [];
+      this.showDropdown = false;
+      if (this.cy) {
+        this.cy.nodes().style('opacity', 1);
+        this.cy.edges().style('opacity', 1);
+      }
+    },
+    selectFirstResult() {
+      if (this.searchResults.length > 0) this.selectNode(this.searchResults[0].id);
+    },
+    selectNode(nodeId) {
+      if (!this.cy) return;
+      var node = this.cy.getElementById(String(nodeId));
+      if (!node || !node.length) return;
+      this.showDropdown = false;
+      // Restore opacity, highlight just this node
+      this.cy.nodes().style('opacity', 0.12);
+      this.cy.edges().style('opacity', 0.12);
+      node.style('opacity', 1);
+      // Also light up its direct edges + neighbours
+      node.connectedEdges().style('opacity', 0.6);
+      node.neighbourhood('node').style('opacity', 0.5);
+      this.cy.animate({ fit: { eles: node, padding: 100 }, duration: 300 });
+      // Trigger the detail panel using the same logic as the tap handler
+      this._showNodeDetail(node.data());
     },
     _renderMindMap() {
       var self = this;
@@ -498,8 +553,7 @@ function vsMindMap() {
           }
         } catch (e) {}
 
-        self.cy.on('tap', 'node', function (evt) {
-          var d = evt.target.data();
+        self._showNodeDetail = function (d) {
           var detail = document.getElementById('vs-mind-map-detail');
           document.getElementById('vs-mm-detail-label').textContent = d.label || '';
           document.getElementById('vs-mm-detail-type').textContent = d.type || '';
@@ -531,11 +585,20 @@ function vsMindMap() {
             });
           }
           detail.classList.remove('hidden');
+        };
+
+        self.cy.on('tap', 'node', function (evt) {
+          self._showNodeDetail(evt.target.data());
         });
 
         self.cy.on('tap', function (evt) {
           if (evt.target === self.cy) {
             document.getElementById('vs-mind-map-detail').classList.add('hidden');
+            // Restore full opacity only if search is empty
+            if (!self.searchQuery) {
+              self.cy.nodes().style('opacity', 1);
+              self.cy.edges().style('opacity', 1);
+            }
           }
         });
       };
