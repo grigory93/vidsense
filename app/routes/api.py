@@ -447,12 +447,13 @@ async def ask_question(
 
         citations.sort(key=lambda c: c["start_time_sec"])
 
+        # Each turn = 1 user + 1 assistant message, so limit by 2 * turns
         history_rows = (
             await session.execute(
                 select(QAMessage)
                 .where(QAMessage.conversation_id == conversation_id)
                 .order_by(QAMessage.created_at.desc())
-                .limit(app_settings.qa_max_history)
+                .limit(app_settings.qa_max_history * 2)
             )
         ).scalars().all()
         history_rows.reverse()

@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     embeddings_dir: str = Field(default="data/embeddings", description="Directory for FAISS index files")
 
     # Q&A
-    qa_max_history: int = Field(default=10, description="Max conversation turns to include in Q&A context")
+    qa_max_history: int = Field(
+        default=10,
+        description="Max conversation turns (user + assistant pair) to include in Q&A context",
+    )
 
     # Database (path under data/ for consistency with embeddings and .gitignore)
     database_url: str = Field(
