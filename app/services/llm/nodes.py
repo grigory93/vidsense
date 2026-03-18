@@ -603,33 +603,62 @@ async def embed_transcript_node(state: GraphState) -> dict:
             splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000, chunk_overlap=200, separators=["\n\n", "\n", ". ", " "]
             )
+            chunk_overlap = 200
 
+            # Build merged docs and, for each, (char_offset, start_time_sec) boundaries
+            # so we can assign accurate timestamps to splits that span multiple segments.
             merged_docs = []
-            merged_metas = []
+            merged_boundaries = []  # list of [(char_offset, start_time_sec), ...] per doc
             current_text = ""
             current_start = 0
+            segment_boundaries = []
             for text, meta in zip(texts, metadatas):
                 if len(current_text) + len(text) > 800:
                     if current_text.strip():
                         merged_docs.append(current_text.strip())
-                        merged_metas.append({"start_time_sec": current_start})
+                        merged_boundaries.append(segment_boundaries)
                     current_text = text
                     current_start = meta["start_time_sec"]
+                    segment_boundaries = [(0, current_start)]
                 else:
                     if not current_text:
                         current_start = meta["start_time_sec"]
+                        segment_boundaries = [(0, current_start)]
+                    else:
+                        # New segment starts after the space we're about to add
+                        segment_boundaries.append(
+                            (len(current_text) + 1, meta["start_time_sec"])
+                        )
                     current_text += " " + text
             if current_text.strip():
                 merged_docs.append(current_text.strip())
-                merged_metas.append({"start_time_sec": current_start})
+                merged_boundaries.append(segment_boundaries)
+
+            def _start_sec_for_offset(offset: int, boundaries: list[tuple[int, float]]) -> int:
+                """Return start_time_sec for the segment containing the given char offset."""
+                if not boundaries:
+                    return 0
+                sec = boundaries[0][1]
+                for (o, ts) in boundaries:
+                    if o <= offset:
+                        sec = ts
+                return int(sec)
 
             final_texts = []
             final_metas = []
-            for doc, meta in zip(merged_docs, merged_metas):
+            for doc, boundaries in zip(merged_docs, merged_boundaries):
                 splits = splitter.split_text(doc)
-                for split in splits:
+                # Compute start char offset of each split (overlap shortens next start).
+                split_starts = [0]
+                for i in range(1, len(splits)):
+                    split_starts.append(
+                        split_starts[-1] + len(splits[i - 1]) - chunk_overlap
+                    )
+                for split, start_offset in zip(splits, split_starts):
                     final_texts.append(split)
-                    final_metas.append(meta)
+                    final_metas.append({
+                        "start_time_sec": _start_sec_for_offset(start_offset, boundaries),
+                    })
         else:
             splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000, chunk_overlap=200
