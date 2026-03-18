@@ -385,6 +385,134 @@ async def regenerate(
 
 
 # ---------------------------------------------------------------------------
+# POST /api/video/{video_id}/ask
+# ---------------------------------------------------------------------------
+
+
+@router.post("/video/{video_id}/ask")
+async def ask_question(
+    video_id: int,
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Semantic Q&A endpoint using RAG over the transcript FAISS index.
+    Accepts { question: str, conversation_id: str | null }.
+    Returns { answer: str, citations: [...], conversation_id: str }.
+    """
+    import os
+    import uuid
+
+    from app.config import settings as app_settings
+    from app.models.db import QAMessage
+
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(status_code=422, detail={"message": "Question cannot be empty."})
+
+    conversation_id = body.get("conversation_id") or str(uuid.uuid4())
+
+    index_path = os.path.join(app_settings.embeddings_dir, str(video_id))
+    if not os.path.exists(index_path):
+        raise HTTPException(
+            status_code=404,
+            detail={"message": "No embeddings available for this video. Please regenerate the analysis."},
+        )
+
+    try:
+        from langchain_community.vectorstores import FAISS
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from app.services.llm.providers import TASK_QA, get_embedding_model, get_llm
+
+        embedding_model = get_embedding_model()
+        store = FAISS.load_local(
+            index_path, embedding_model, allow_dangerous_deserialization=True
+        )
+
+        docs = store.similarity_search(question, k=5)
+
+        context_parts = []
+        citations = []
+        seen_timestamps = set()
+        for doc in docs:
+            ts = doc.metadata.get("start_time_sec", 0)
+            context_parts.append(doc.page_content)
+            if ts not in seen_timestamps:
+                seen_timestamps.add(ts)
+                m, s = divmod(ts, 60)
+                h, m_r = divmod(m, 60)
+                display = f"{h}:{m_r:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+                citations.append({"start_time_sec": ts, "display": display})
+
+        citations.sort(key=lambda c: c["start_time_sec"])
+
+        history_rows = (
+            await session.execute(
+                select(QAMessage)
+                .where(QAMessage.conversation_id == conversation_id)
+                .order_by(QAMessage.created_at.desc())
+                .limit(app_settings.qa_max_history)
+            )
+        ).scalars().all()
+        history_rows.reverse()
+
+        messages = [
+            SystemMessage(content=(
+                "You are a helpful assistant answering questions about a video based "
+                "on its transcript. Ground your answers strictly in the provided context. "
+                "If the context doesn't contain enough information, say so.\n\n"
+                "Context from transcript:\n" + "\n---\n".join(context_parts)
+            ))
+        ]
+
+        for row in history_rows:
+            if row.role == "user":
+                messages.append(HumanMessage(content=row.content))
+            else:
+                from langchain_core.messages import AIMessage
+                messages.append(AIMessage(content=row.content))
+
+        messages.append(HumanMessage(content=question))
+
+        llm = get_llm(task=TASK_QA)
+        response = await llm.ainvoke(messages)
+        answer = response.content
+
+        user_msg = QAMessage(
+            video_id=video_id,
+            conversation_id=conversation_id,
+            role="user",
+            content=question,
+        )
+        assistant_msg = QAMessage(
+            video_id=video_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=answer,
+            citations_json=json.dumps(citations),
+        )
+        session.add(user_msg)
+        session.add(assistant_msg)
+        await session.commit()
+
+        return {
+            "answer": answer,
+            "citations": citations,
+            "conversation_id": conversation_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Q&A error for video %d: %s", video_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"message": f"Failed to generate answer: {exc}"},
+        )
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

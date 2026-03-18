@@ -101,6 +101,14 @@ class AnalysisRun(Base):
         cascade="all, delete-orphan",
         order_by="Chapter.sort_order",
     )
+    mind_map: Mapped["MindMap | None"] = relationship(
+        back_populates="run", cascade="all, delete-orphan", uselist=False
+    )
+    glossary_terms: Mapped[list["GlossaryTerm"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="GlossaryTerm.sort_order",
+    )
 
 
 class Summary(Base):
@@ -130,3 +138,43 @@ class Chapter(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     run: Mapped["AnalysisRun"] = relationship(back_populates="chapters")
+
+
+class MindMap(Base):
+    __tablename__ = "mind_maps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id"), nullable=False, index=True)
+    nodes_json: Mapped[str] = mapped_column(Text, nullable=False)
+    edges_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+    run: Mapped["AnalysisRun"] = relationship(back_populates="mind_map")
+
+
+class GlossaryTerm(Base):
+    __tablename__ = "glossary_terms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id"), nullable=False, index=True)
+    term: Mapped[str] = mapped_column(String(256), nullable=False)
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    related_terms_json: Mapped[str | None] = mapped_column(Text)
+    occurrences_json: Mapped[str] = mapped_column(Text, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    run: Mapped["AnalysisRun"] = relationship(back_populates="glossary_terms")
+
+
+class QAMessage(Base):
+    __tablename__ = "qa_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id"), nullable=False, index=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    citations_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    video: Mapped["Video"] = relationship()

@@ -23,16 +23,32 @@ from app.models.db import (
     AnalysisRun,
     AnalysisRunStatus,
     Chapter,
+    GlossaryTerm,
+    MindMap,
     Summary,
     SummaryLevel,
 )
-from app.models.schemas import ChapterListSchema, SummarySchema
+from app.models.schemas import (
+    ChapterListSchema,
+    GlossaryListSchema,
+    MindMapSchema,
+    SummarySchema,
+)
 from app.services.llm.prompts import (
     build_chapter_messages,
     build_chapter_messages_chunk,
+    build_glossary_messages,
+    build_mind_map_messages,
     build_summary_messages,
     chunk_segments,
     format_transcript_with_timestamps,
+)
+from app.services.llm.providers import (
+    TASK_CHAPTERS,
+    TASK_GLOSSARY,
+    TASK_MIND_MAP,
+    TASK_SUMMARIES,
+    get_llm,
 )
 from app.services.llm.state import GraphState
 
@@ -89,15 +105,19 @@ async def _invoke_with_structured_output(
 
 
 async def _set_step(state: GraphState, step: str) -> None:
-    """Persist current_step to DB using a fresh session (safe for parallel nodes)."""
+    """Persist current_step to DB. Non-critical — swallows errors to avoid
+    crashing a pipeline node over a progress indicator update."""
     session_factory = state["session_factory"]
     run_id: int = state["run_id"]
-    async with session_factory() as sess:
-        result = await sess.execute(select(AnalysisRun).where(AnalysisRun.id == run_id))
-        db_run = result.scalar_one_or_none()
-        if db_run:
-            db_run.current_step = step
-            await sess.commit()
+    try:
+        async with session_factory() as sess:
+            result = await sess.execute(select(AnalysisRun).where(AnalysisRun.id == run_id))
+            db_run = result.scalar_one_or_none()
+            if db_run:
+                db_run.current_step = step
+                await sess.commit()
+    except Exception as exc:
+        logger.debug("[run=%d] _set_step(%r) failed (non-critical): %s", run_id, step, exc)
 
 
 async def validate_input_node(state: GraphState) -> dict:
@@ -130,7 +150,7 @@ async def gen_summaries_node(state: GraphState) -> dict:
 
     run_id: int = state["run_id"]
     session_factory = state["session_factory"]
-    llm: BaseChatModel = state["llm"]
+    llm = get_llm(task=TASK_SUMMARIES)
     transcript_source = state["transcript_source"]
     focus_prompt = state.get("focus_prompt")
 
@@ -187,7 +207,7 @@ async def extract_chapters_node(state: GraphState) -> dict:
 
     run_id: int = state["run_id"]
     session_factory = state["session_factory"]
-    llm: BaseChatModel = state["llm"]
+    llm = get_llm(task=TASK_CHAPTERS)
     transcript_source = state["transcript_source"]
     focus_prompt = state.get("focus_prompt")
 
@@ -312,6 +332,236 @@ async def extract_chapters_node(state: GraphState) -> dict:
     return {"chapters_result": merged, "chapters_error": None}
 
 
+async def extract_mind_map_node(state: GraphState) -> dict:
+    """Extract a concept mind map from the transcript and persist to DB."""
+    if state.get("pipeline_failed"):
+        return {}
+
+    run_id: int = state["run_id"]
+    session_factory = state["session_factory"]
+    llm = get_llm(task=TASK_MIND_MAP)
+    transcript_source = state["transcript_source"]
+    focus_prompt = state.get("focus_prompt")
+
+    logger.info("[run=%d] extract_mind_map: starting", run_id)
+    await _set_step(state, "extracting_mind_map")
+
+    chapter_ids_titles: list[tuple[str, str]] | None = None
+    chapters_result = state.get("chapters_result")
+    if chapters_result and hasattr(chapters_result, "chapters"):
+        chapter_ids_titles = [(c.chapter_id, c.title) for c in chapters_result.chapters]
+
+    messages = build_mind_map_messages(
+        transcript_source.raw_text, chapter_ids_titles, focus_prompt
+    )
+
+    result, error = await _invoke_with_structured_output(
+        llm, MindMapSchema, messages, settings.llm_max_retries
+    )
+
+    if result is None:
+        logger.error("[run=%d] extract_mind_map: FAILED — %s", run_id, error)
+        return {
+            "mind_map_result": None,
+            "mind_map_error": error or "Mind map extraction failed.",
+            "errors": state.get("errors", []) + [f"Mind map extraction failed: {error}"],
+        }
+
+    async with session_factory() as sess:
+        mm = MindMap(
+            run_id=run_id,
+            nodes_json=json.dumps([n.model_dump() for n in result.nodes]),
+            edges_json=json.dumps([e.model_dump() for e in result.edges]),
+        )
+        sess.add(mm)
+        await sess.commit()
+
+    logger.info(
+        "[run=%d] extract_mind_map: done — %d nodes, %d edges",
+        run_id, len(result.nodes), len(result.edges),
+    )
+    return {"mind_map_result": result, "mind_map_error": None}
+
+
+async def extract_glossary_node(state: GraphState) -> dict:
+    """Extract domain-specific glossary terms and map them to transcript timestamps."""
+    if state.get("pipeline_failed"):
+        return {}
+
+    run_id: int = state["run_id"]
+    session_factory = state["session_factory"]
+    llm = get_llm(task=TASK_GLOSSARY)
+    transcript_source = state["transcript_source"]
+    focus_prompt = state.get("focus_prompt")
+
+    logger.info("[run=%d] extract_glossary: starting", run_id)
+    await _set_step(state, "extracting_glossary")
+
+    messages = build_glossary_messages(transcript_source.raw_text, focus_prompt)
+
+    result, error = await _invoke_with_structured_output(
+        llm, GlossaryListSchema, messages, settings.llm_max_retries
+    )
+
+    if result is None:
+        logger.error("[run=%d] extract_glossary: FAILED — %s", run_id, error)
+        return {
+            "glossary_result": None,
+            "glossary_error": error or "Glossary extraction failed.",
+            "errors": state.get("errors", []) + [f"Glossary extraction failed: {error}"],
+        }
+
+    segments: list[dict] = []
+    if transcript_source.segments_json:
+        try:
+            segments = json.loads(transcript_source.segments_json)
+        except (json.JSONDecodeError, TypeError):
+            segments = []
+
+    async with session_factory() as sess:
+        for idx, term_schema in enumerate(result.terms):
+            occurrences = _find_term_occurrences(term_schema.term, segments)
+            gt = GlossaryTerm(
+                run_id=run_id,
+                term=term_schema.term,
+                definition=term_schema.definition,
+                category=term_schema.category,
+                related_terms_json=json.dumps(term_schema.related_terms) if term_schema.related_terms else None,
+                occurrences_json=json.dumps(occurrences),
+                sort_order=idx,
+            )
+            sess.add(gt)
+        await sess.commit()
+
+    logger.info("[run=%d] extract_glossary: done — %d terms", run_id, len(result.terms))
+    return {"glossary_result": result, "glossary_error": None}
+
+
+def _find_term_occurrences(
+    term: str, segments: list[dict], max_occurrences: int = 5
+) -> list[dict]:
+    """Find timestamps where a term appears in the transcript segments."""
+    if not segments:
+        return []
+    term_lower = term.lower()
+    occurrences: list[dict] = []
+    for seg in segments:
+        text = seg.get("text", "").lower()
+        if term_lower in text:
+            ts = int(seg.get("start", 0))
+            m, s = divmod(ts, 60)
+            h, m = divmod(m, 60)
+            display = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+            occurrences.append({"timestamp_sec": ts, "display": display})
+            if len(occurrences) >= max_occurrences:
+                break
+    return occurrences
+
+
+async def embed_transcript_node(state: GraphState) -> dict:
+    """Chunk the transcript and build a FAISS index for Q&A retrieval."""
+    if state.get("pipeline_failed"):
+        return {}
+
+    run_id: int = state["run_id"]
+    video_id: int | None = None
+    run_obj = state.get("run")
+    if run_obj:
+        video_id = run_obj.video_id
+
+    logger.info("[run=%d] embed_transcript: starting", run_id)
+    await _set_step(state, "embedding_transcript")
+
+    transcript_source = state["transcript_source"]
+    segments: list[dict] = []
+    if transcript_source.segments_json:
+        try:
+            segments = json.loads(transcript_source.segments_json)
+        except (json.JSONDecodeError, TypeError):
+            segments = []
+
+    if not segments and not transcript_source.raw_text.strip():
+        return {"embedding_error": "No transcript available for embedding."}
+
+    try:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_community.vectorstores import FAISS
+
+        from app.services.llm.providers import get_embedding_model
+
+        embedding_model = get_embedding_model()
+
+        if segments:
+            texts = []
+            metadatas = []
+            for seg in segments:
+                text = seg.get("text", "").strip()
+                if text:
+                    ts = int(seg.get("start", 0))
+                    dur = float(seg.get("duration", 0))
+                    texts.append(text)
+                    metadatas.append({"start_time_sec": ts, "duration": dur})
+
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000, chunk_overlap=200, separators=["\n\n", "\n", ". ", " "]
+            )
+
+            merged_docs = []
+            merged_metas = []
+            current_text = ""
+            current_start = 0
+            for text, meta in zip(texts, metadatas):
+                if len(current_text) + len(text) > 800:
+                    if current_text.strip():
+                        merged_docs.append(current_text.strip())
+                        merged_metas.append({"start_time_sec": current_start})
+                    current_text = text
+                    current_start = meta["start_time_sec"]
+                else:
+                    if not current_text:
+                        current_start = meta["start_time_sec"]
+                    current_text += " " + text
+            if current_text.strip():
+                merged_docs.append(current_text.strip())
+                merged_metas.append({"start_time_sec": current_start})
+
+            final_texts = []
+            final_metas = []
+            for doc, meta in zip(merged_docs, merged_metas):
+                splits = splitter.split_text(doc)
+                for split in splits:
+                    final_texts.append(split)
+                    final_metas.append(meta)
+        else:
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000, chunk_overlap=200
+            )
+            splits = splitter.split_text(transcript_source.raw_text)
+            final_texts = splits
+            final_metas = [{"start_time_sec": 0}] * len(splits)
+
+        store = FAISS.from_texts(final_texts, embedding_model, metadatas=final_metas)
+
+        import os
+        from app.config import settings as app_settings
+        os.makedirs(app_settings.embeddings_dir, exist_ok=True)
+        save_path = os.path.join(app_settings.embeddings_dir, str(video_id))
+        store.save_local(save_path)
+
+        logger.info(
+            "[run=%d] embed_transcript: done — %d chunks, saved to %s",
+            run_id, len(final_texts), save_path,
+        )
+        return {"embedding_error": None}
+
+    except Exception as exc:
+        logger.error("[run=%d] embed_transcript: FAILED — %s", run_id, exc)
+        return {
+            "embedding_error": str(exc),
+            "errors": state.get("errors", []) + [f"Embedding failed: {exc}"],
+        }
+
+
 async def finalize_run_node(state: GraphState) -> dict:
     """Set final run status and completion timestamp based on what was persisted."""
     run_id: int = state["run_id"]
@@ -356,16 +606,35 @@ async def finalize_run_node(state: GraphState) -> dict:
             final_status = AnalysisRunStatus.failed
             run.error_message = "; ".join(state.get("errors", ["All pipeline stages failed."]))
 
+        # V2 feature errors are logged but don't downgrade core status
+        mind_map_error = state.get("mind_map_error")
+        glossary_error = state.get("glossary_error")
+        embedding_error = state.get("embedding_error")
+        v2_warnings = []
+        if mind_map_error:
+            v2_warnings.append(f"Mind map: {mind_map_error}")
+        if glossary_error:
+            v2_warnings.append(f"Glossary: {glossary_error}")
+        if embedding_error:
+            v2_warnings.append(f"Embeddings: {embedding_error}")
+        if v2_warnings:
+            existing = run.error_message or ""
+            v2_msg = "; ".join(v2_warnings)
+            run.error_message = f"{existing}; {v2_msg}".strip("; ") if existing else v2_msg
+
         run.status = final_status
         run.current_step = None
         run.completed_at = datetime.now(timezone.utc)
         await sess.commit()
 
     logger.info(
-        "[run=%d] finalize_run: done — final_status=%s summaries=%s chapters=%s",
+        "[run=%d] finalize_run: done — final_status=%s summaries=%s chapters=%s mind_map=%s glossary=%s embeddings=%s",
         run_id, final_status,
         "ok" if summary_result else f"error({summary_error})",
         "ok" if chapters_result else f"error({chapters_error})",
+        "ok" if state.get("mind_map_result") else f"error({state.get('mind_map_error')})",
+        "ok" if state.get("glossary_result") else f"error({state.get('glossary_error')})",
+        "ok" if not state.get("embedding_error") else f"error({state.get('embedding_error')})",
     )
     return {"final_status": final_status}
 

@@ -48,6 +48,62 @@ class SummarySchema(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Mind Map LLM output schemas
+# ---------------------------------------------------------------------------
+
+
+class MindMapNodeSchema(BaseModel):
+    """A concept node in the mind map."""
+
+    node_id: str = Field(description="Unique identifier, e.g. 'n_01'")
+    label: str = Field(description="Concise display label for the node")
+    type: str = Field(description="One of: concept, person, technology, event, theory, methodology")
+    description: str = Field(description="1-2 sentence definition grounded in the transcript")
+    chapter_ids: list[str] = Field(
+        default_factory=list, description="chapter_ids of chapters where this concept appears"
+    )
+
+
+class MindMapEdgeSchema(BaseModel):
+    """A relationship between two mind map nodes."""
+
+    source: str = Field(description="node_id of the source node")
+    target: str = Field(description="node_id of the target node")
+    relationship: str = Field(description="Brief label, e.g. 'uses', 'contrasts with', 'builds on'")
+
+
+class MindMapSchema(BaseModel):
+    """Complete mind map extracted from a transcript."""
+
+    nodes: list[MindMapNodeSchema] = Field(min_length=1)
+    edges: list[MindMapEdgeSchema] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Glossary LLM output schemas
+# ---------------------------------------------------------------------------
+
+
+class GlossaryTermSchema(BaseModel):
+    """A domain-specific term extracted from the transcript."""
+
+    term: str = Field(description="The term or phrase")
+    definition: str = Field(description="Concise definition grounded in the transcript context")
+    category: str = Field(
+        description="One of: technical, domain, person, acronym, methodology"
+    )
+    related_terms: list[str] = Field(
+        default_factory=list, description="Other glossary terms this relates to"
+    )
+
+
+class GlossaryListSchema(BaseModel):
+    """Wrapper for LLM-returned glossary."""
+
+    terms: list[GlossaryTermSchema] = Field(min_length=1)
+
+
+# ---------------------------------------------------------------------------
 # API response schemas
 # ---------------------------------------------------------------------------
 

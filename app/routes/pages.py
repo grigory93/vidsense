@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -13,7 +14,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models.db import AnalysisRun, AnalysisRunStatus, Chapter, Summary, Video
+from app.models.db import (
+    AnalysisRun,
+    AnalysisRunStatus,
+    Chapter,
+    GlossaryTerm,
+    MindMap,
+    Summary,
+    Video,
+)
 from app.models.schemas import _seconds_to_mmss
 
 logger = logging.getLogger(__name__)
@@ -304,6 +313,52 @@ async def partial_status(
         # Outline available but no chapters — single ungrouped block (no timestamps)
         detailed_outline_groups = [{"chapter": None, "points": detailed_points}]
 
+    # Query V2 artifacts: mind map, glossary, embeddings availability
+    mind_map_row = (
+        await session.execute(select(MindMap).where(MindMap.run_id == run.id))
+    ).scalar_one_or_none()
+    mind_map_data: dict | None = None
+    if mind_map_row:
+        try:
+            mind_map_data = {
+                "nodes": json.loads(mind_map_row.nodes_json),
+                "edges": json.loads(mind_map_row.edges_json),
+            }
+        except (json.JSONDecodeError, TypeError):
+            mind_map_data = None
+
+    glossary_rows = (
+        await session.execute(
+            select(GlossaryTerm)
+            .where(GlossaryTerm.run_id == run.id)
+            .order_by(GlossaryTerm.sort_order)
+        )
+    ).scalars().all()
+    glossary_terms_data: list[dict] = []
+    for gt in glossary_rows:
+        occurrences = []
+        try:
+            occurrences = json.loads(gt.occurrences_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        related = []
+        if gt.related_terms_json:
+            try:
+                related = json.loads(gt.related_terms_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        glossary_terms_data.append({
+            "term": gt.term,
+            "definition": gt.definition,
+            "category": gt.category,
+            "related_terms": related,
+            "occurrences": occurrences,
+        })
+
+    from app.config import settings as app_settings
+    embeddings_path = os.path.join(app_settings.embeddings_dir, str(video_id))
+    has_embeddings = os.path.isdir(embeddings_path)
+
     # Compute total processing time
     processing_time_label: str | None = None
     if run.completed_at and run.created_at:
@@ -326,6 +381,9 @@ async def partial_status(
             "detailed_outline_groups": detailed_outline_groups,
             "has_summaries": bool(summaries),
             "has_chapters": bool(chapters),
+            "mind_map": mind_map_data,
+            "glossary_terms": glossary_terms_data,
+            "has_embeddings": has_embeddings,
             "is_partial": run.status == AnalysisRunStatus.partial,
             "error_message": run.error_message,
             "from_cache": bool(from_cache),

@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -11,8 +11,19 @@ logger = logging.getLogger(__name__)
 engine = create_async_engine(
     settings.database_url,
     echo=settings.app_debug,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_size=1,
+    max_overflow=4,
 )
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragmas(dbapi_conn, connection_record):
+    """Enable WAL mode and busy timeout on every SQLite connection."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
@@ -48,6 +59,9 @@ async def init_db() -> None:
     from app.models import db  # noqa: F401 — ensure models are registered
 
     async with engine.begin() as conn:
+        # WAL mode allows concurrent readers + one writer without "database is locked"
+        await conn.execute(text("PRAGMA journal_mode=WAL"))
+        await conn.execute(text("PRAGMA busy_timeout=5000"))
         await conn.run_sync(Base.metadata.create_all)
         await _add_missing_columns(conn)
 
