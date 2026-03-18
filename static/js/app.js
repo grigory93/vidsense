@@ -307,6 +307,43 @@ function vsGlossary() {
   };
 }
 
+/** Escape user Q&A text for safe display (line breaks preserved). */
+function vsQaEscapeUserText(text) {
+  if (!text) return '';
+  var div = document.createElement('div');
+  div.textContent = String(text);
+  return div.innerHTML.replace(/\n/g, '<br>');
+}
+
+/** Markdown → sanitized HTML for assistant answers. */
+function vsQaMarkdownToHtml(md) {
+  if (!md) return '';
+  if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+    return vsQaEscapeUserText(md);
+  }
+  try {
+    var raw = marked.parse(String(md), { breaks: true, gfm: true });
+  } catch (e) {
+    return vsQaEscapeUserText(md);
+  }
+  var clean = DOMPurify.sanitize(raw, {
+    ALLOWED_TAGS: [
+      'p', 'br', 'strong', 'em', 'b', 'i', 'del', 's', 'ul', 'ol', 'li',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'code', 'pre', 'blockquote',
+      'a', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'span'
+    ],
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
+  });
+  var tmp = document.createElement('div');
+  tmp.innerHTML = clean;
+  var links = tmp.querySelectorAll('a[href]');
+  for (var i = 0; i < links.length; i++) {
+    links[i].setAttribute('target', '_blank');
+    links[i].setAttribute('rel', 'noopener noreferrer');
+  }
+  return tmp.innerHTML;
+}
+
 function vsQA(videoId) {
   return {
     videoId: videoId,
@@ -319,6 +356,11 @@ function vsQA(videoId) {
       'Summarize the key arguments',
       'What conclusions are drawn?'
     ],
+    qaMessageHtml(msg) {
+      if (!msg) return '';
+      if (msg.role === 'user') return vsQaEscapeUserText(msg.content);
+      return vsQaMarkdownToHtml(msg.content);
+    },
     async sendQuestion() {
       var q = this.question.trim();
       if (!q || this.loading) return;

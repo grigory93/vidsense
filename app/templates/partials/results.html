@@ -661,7 +661,9 @@
                  :class="msg.role === 'user'
                    ? 'bg-brand-600 text-white rounded-br-sm'
                    : 'bg-slate-100 text-slate-800 rounded-bl-sm'">
-              <p x-html="msg.content"></p>
+              <div class="vs-qa-msg-body"
+                   :class="msg.role === 'assistant' ? 'vs-qa-md' : ''"
+                   x-html="qaMessageHtml(msg)"></div>
               <template x-if="msg.citations && msg.citations.length">
                 <div class="flex flex-wrap gap-1.5 mt-2 pt-2"
                      :class="msg.role === 'user' ? 'border-t border-brand-500/30' : 'border-t border-slate-200'">
