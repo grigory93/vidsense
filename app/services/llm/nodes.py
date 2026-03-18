@@ -502,7 +502,7 @@ def _find_term_occurrences(
                         "sion", "ment", "ness", "ally", "ious", "ical",
                         "ies", "ing", "ion", "ous", "ive", "ble",
                         "ers", "est", "ful", "ity", "ual",
-                        "ly", "ed", "er", "al", "es", "ts", "s"):
+                        "ly", "ed", "er", "al", "es", "s"):
             if len(word) > len(suffix) + 2 and word.endswith(suffix):
                 return word[: -len(suffix)]
         return word
