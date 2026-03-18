@@ -154,6 +154,9 @@
     const cards = Array.from(document.querySelectorAll('.chapter-card'));
     if (!cards.length) return;
 
+    // Ensure the Detailed Outline tab is active so chapter cards are visible
+    ensureDetailedTabActive();
+
     const activeIdx = cards.findIndex(function (c) {
       return c.classList.contains('is-active-chapter');
     });
@@ -168,6 +171,20 @@
       window.seekVideo(start);
     }
     next.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /**
+   * Switch the summary tab to 'detailed' if the chapter explorer lives there
+   * and the current tab is something else. This ensures j/k navigation is
+   * meaningful — the user can see the card that gets highlighted.
+   */
+  function ensureDetailedTabActive() {
+    const summaryRoot = document.querySelector('[x-data*="activeTab"]');
+    if (!summaryRoot) return;
+    const data = summaryRoot._x_dataStack && summaryRoot._x_dataStack[0];
+    if (data && typeof data.activeTab !== 'undefined' && data.activeTab !== 'detailed') {
+      data.activeTab = 'detailed';
+    }
   }
 
   function togglePlayPause() {
@@ -202,6 +219,14 @@
       }
     }
   }
+
+  /**
+   * Expose tab-switcher globally so player.js can call it when
+   * auto-scrolling to an active chapter that lives inside the detailed tab.
+   */
+  window.vsEnsureDetailedTab = function () {
+    ensureDetailedTabActive();
+  };
 
   document.addEventListener('click', function (e) {
     const seg = e.target.closest('.vs-timeline-segment');

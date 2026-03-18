@@ -269,6 +269,59 @@
   -webkit-line-clamp: 3;
 }
 
+/* Chapter summary paragraph inside unified expandable body */
+.vs-chapter-summary {
+  font-size: 0.8125rem;
+  color: #475569;
+  line-height: 1.65;
+  font-style: italic;
+}
+
+/* Active outline bullet — mirrors chapter card active state at smaller scale */
+.outline-point.is-active-bullet {
+  background-color: #f0f9ff;
+}
+
+.outline-point.is-active-bullet .outline-point-badge {
+  background-color: #0284c7;
+  color: #fff;
+  border-color: #0284c7;
+}
+
+.outline-point.is-active-bullet .outline-point-text {
+  color: #0c4a6e;
+  font-weight: 500;
+}
+
+.outline-point.is-active-bullet .vs-outline-point-ts {
+  color: #0284c7;
+}
+
+/* Per-bullet estimated timestamp chip — lighter weight than chapter separator chip */
+.vs-outline-point-ts {
+  font-family: ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s ease;
+  line-height: 1.4;
+}
+
+.vs-outline-point-ts:hover {
+  color: #0284c7;
+}
+
+.vs-outline-point-ts:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* ============================================================
    Prose overrides for summary content
    ============================================================ */

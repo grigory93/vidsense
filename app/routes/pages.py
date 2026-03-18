@@ -251,6 +251,55 @@ async def partial_status(
             "content_json": content_json,
         }
 
+    # Build detailed_outline_groups for the composite Detailed Outline + Chapter Explorer tab.
+    # Each group maps one chapter to a proportional slice of the detailed outline points.
+    detailed_points: list[str] = []
+    detailed_entry = enriched_summaries.get("detailed", {})
+    if detailed_entry.get("content_json"):
+        detailed_points = detailed_entry["content_json"]
+    elif detailed_entry.get("content_text"):
+        detailed_points = [
+            line.lstrip("•-*0123456789. ").strip()
+            for line in detailed_entry["content_text"].split("\n")
+            if line.strip()
+        ]
+
+    detailed_outline_groups: list[dict] = []
+    if enriched_chapters:
+        # Always create one group per chapter. Outline points are distributed
+        # proportionally; if no outline exists, the points list is empty but
+        # the chapter header/summary/key-points/transcript still render.
+        n_points = len(detailed_points)
+        n_chapters = len(enriched_chapters)
+        for i, chapter in enumerate(enriched_chapters):
+            enriched_pts: list[dict] = []
+            if detailed_points:
+                start_idx = round(i * n_points / n_chapters)
+                end_idx = round((i + 1) * n_points / n_chapters)
+                chapter_points = detailed_points[start_idx:end_idx]
+                n_ch = len(chapter_points)
+                ch_dur = chapter["end_time_sec"] - chapter["start_time_sec"]
+                for j, text in enumerate(chapter_points):
+                    # Distribute timestamps proportionally within the chapter.
+                    # Use j/n_ch so the last point doesn't land on the chapter
+                    # boundary (which is the next chapter's start).
+                    ts = chapter["start_time_sec"] + round(j * ch_dur / max(n_ch, 1))
+                    ts = max(chapter["start_time_sec"], min(ts, chapter["end_time_sec"]))
+                    end_ts = chapter["start_time_sec"] + round((j + 1) * ch_dur / max(n_ch, 1))
+                    end_ts = max(ts + 1, min(end_ts, chapter["end_time_sec"]))
+                    enriched_pts.append(
+                        {
+                            "text": text,
+                            "timestamp_sec": ts,
+                            "end_timestamp_sec": end_ts,
+                            "timestamp_display": _seconds_to_mmss(ts),
+                        }
+                    )
+            detailed_outline_groups.append({"chapter": chapter, "points": enriched_pts})
+    elif detailed_points:
+        # Outline available but no chapters — single ungrouped block (no timestamps)
+        detailed_outline_groups = [{"chapter": None, "points": detailed_points}]
+
     # Compute total processing time
     processing_time_label: str | None = None
     if run.completed_at and run.created_at:
@@ -270,6 +319,7 @@ async def partial_status(
             "video_id": video_id,
             "summaries": enriched_summaries,
             "chapters": enriched_chapters,
+            "detailed_outline_groups": detailed_outline_groups,
             "has_summaries": bool(summaries),
             "has_chapters": bool(chapters),
             "is_partial": run.status == AnalysisRunStatus.partial,
