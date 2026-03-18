@@ -2,10 +2,14 @@
 LangGraph StateGraph definition for VidSense processing pipeline.
 
 Graph topology:
-  START → validate_input → [gen_summaries, extract_chapters,
-                             extract_mind_map, extract_glossary,
-                             embed_transcript] (parallel fan-out)
-        → finalize_run → END
+  START → validate_input → gen_summaries      → finalize_run → END
+                         → extract_chapters   → finalize_run
+                         → extract_chapters   → extract_mind_map → finalize_run
+                         → extract_glossary   → finalize_run
+                         → embed_transcript   → finalize_run
+
+  extract_mind_map is sequenced after extract_chapters so that chapters_result
+  is available in state for chapter cross-reference enrichment in the prompt.
 
 Each parallel node constructs its own LLM via get_llm(task=...) so
 different tasks can use different models without sharing state.
@@ -44,12 +48,15 @@ def _build_graph() -> StateGraph:
 
     graph.add_edge(START, "validate_input")
 
-    # Fan-out: all extraction + embedding nodes run in parallel after validation
+    # Fan-out: summaries, glossary, and embedding run fully in parallel after validation.
+    # extract_mind_map depends on extract_chapters so that chapters_result is in state
+    # when the mind map node reads it for chapter cross-reference enrichment.
     graph.add_edge("validate_input", "gen_summaries")
     graph.add_edge("validate_input", "extract_chapters")
-    graph.add_edge("validate_input", "extract_mind_map")
     graph.add_edge("validate_input", "extract_glossary")
     graph.add_edge("validate_input", "embed_transcript")
+
+    graph.add_edge("extract_chapters", "extract_mind_map")
 
     # All fan-in to finalize
     graph.add_edge("gen_summaries", "finalize_run")

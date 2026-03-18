@@ -38,6 +38,7 @@
 <div x-data="{ activeView: (window.__vsActiveView || 'read') }"
      x-init="
        window.__vsActiveView = activeView;
+       window.__vsSetActiveView = (v) => { activeView = v; };
        $watch('activeView', v => {
          window.__vsActiveView = v;
          if (v === 'mind_map') {
@@ -548,7 +549,24 @@
          x-data="vsMindMap()"
          x-init="init()">
     </div>
+    <div id="vs-mind-map-detail" class="hidden mt-3 p-4 rounded-xl border border-slate-200 bg-white">
+      <div class="flex items-start justify-between gap-2 mb-1">
+        <div class="flex items-center gap-2">
+          <span id="vs-mm-detail-label" class="font-semibold text-slate-800 text-sm"></span>
+          <span id="vs-mm-detail-type" class="px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-500"></span>
+        </div>
+        <button onclick="document.getElementById('vs-mind-map-detail').classList.add('hidden')"
+                class="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <p id="vs-mm-detail-desc" class="text-slate-600 text-sm leading-relaxed mb-2"></p>
+      <div id="vs-mm-detail-chapters" class="flex flex-wrap gap-1.5"></div>
+    </div>
     <script type="application/json" id="vs-mind-map-data">{{ mind_map | tojson }}</script>
+    <script type="application/json" id="vs-chapters-index">{{ (chapters or []) | tojson }}</script>
     {% else %}
     <div class="flex flex-col items-center justify-center py-16 text-center">
       <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4">
@@ -661,9 +679,8 @@
                  :class="msg.role === 'user'
                    ? 'bg-brand-600 text-white rounded-br-sm'
                    : 'bg-slate-100 text-slate-800 rounded-bl-sm'">
-              <div class="vs-qa-msg-body"
-                   :class="msg.role === 'assistant' ? 'vs-qa-md' : ''"
-                   x-html="qaMessageHtml(msg)"></div>
+              <div class="vs-qa-msg-body whitespace-pre-wrap break-words"
+                   x-text="msg.content"></div>
               <template x-if="msg.citations && msg.citations.length">
                 <div class="flex flex-wrap gap-1.5 mt-2 pt-2"
                      :class="msg.role === 'user' ? 'border-t border-brand-500/30' : 'border-t border-slate-200'">

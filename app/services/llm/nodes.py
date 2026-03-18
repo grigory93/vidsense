@@ -440,21 +440,101 @@ async def extract_glossary_node(state: GraphState) -> dict:
 def _find_term_occurrences(
     term: str, segments: list[dict], max_occurrences: int = 5
 ) -> list[dict]:
-    """Find timestamps where a term appears in the transcript segments."""
+    """Find timestamps where a term appears in the transcript segments.
+
+    Uses a three-tier matching strategy to handle common mismatches:
+    1. Exact substring match within a single segment
+    2. Sliding-window match across consecutive segments (multi-word terms
+       often span YouTube's short caption segments)
+    3. Stem-based match — strips common English suffixes so "algorithm"
+       matches "algorithms", "optimizing" matches "optimization", etc.
+    """
+    import re
+
     if not segments:
         return []
-    term_lower = term.lower()
+
+    term_lower = term.lower().strip()
+    if not term_lower:
+        return []
+
     occurrences: list[dict] = []
+    seen_timestamps: set[int] = set()
+
+    def _add_hit(ts_raw: float | int) -> bool:
+        ts = int(ts_raw)
+        if ts in seen_timestamps:
+            return False
+        seen_timestamps.add(ts)
+        m, s = divmod(ts, 60)
+        h, m = divmod(m, 60)
+        display = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+        occurrences.append({"timestamp_sec": ts, "display": display})
+        return len(occurrences) >= max_occurrences
+
+    # --- Tier 1: exact substring match in a single segment ---
     for seg in segments:
         text = seg.get("text", "").lower()
         if term_lower in text:
-            ts = int(seg.get("start", 0))
-            m, s = divmod(ts, 60)
-            h, m = divmod(m, 60)
-            display = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
-            occurrences.append({"timestamp_sec": ts, "display": display})
-            if len(occurrences) >= max_occurrences:
-                break
+            if _add_hit(seg.get("start", 0)):
+                return occurrences
+
+    # --- Tier 2: sliding window across consecutive segments ---
+    # Multi-word terms like "neural network architecture" may span 2-3 segments.
+    if len(term_lower.split()) > 1:
+        window_size = min(len(term_lower.split()), 4)
+        for i in range(len(segments) - window_size + 1):
+            window_text = " ".join(
+                segments[i + j].get("text", "") for j in range(window_size)
+            ).lower()
+            if term_lower in window_text:
+                if _add_hit(segments[i].get("start", 0)):
+                    return occurrences
+
+    if occurrences:
+        occurrences.sort(key=lambda o: o["timestamp_sec"])
+        return occurrences
+
+    # --- Tier 3: stem-based matching ---
+    # Strip common English suffixes so morphological variants match.
+    def _crude_stem(word: str) -> str:
+        for suffix in ("ation", "izing", "ised", "ized", "ting", "ning",
+                        "sion", "ment", "ness", "ally", "ious", "ical",
+                        "ies", "ing", "ion", "ous", "ive", "ble",
+                        "ers", "est", "ful", "ity", "ual",
+                        "ly", "ed", "er", "al", "es", "ts", "s"):
+            if len(word) > len(suffix) + 2 and word.endswith(suffix):
+                return word[: -len(suffix)]
+        return word
+
+    term_words = [w for w in re.split(r"[\s\-/]+", term_lower) if len(w) > 2]
+    if not term_words:
+        return occurrences
+
+    term_stems = {_crude_stem(w) for w in term_words}
+
+    for seg in segments:
+        seg_words = re.split(r"[\s\-/]+", seg.get("text", "").lower())
+        seg_stems = {_crude_stem(w) for w in seg_words if len(w) > 2}
+        if term_stems.issubset(seg_stems):
+            if _add_hit(seg.get("start", 0)):
+                return occurrences
+
+    # Sliding window for stem matching on multi-word terms
+    if len(term_words) > 1:
+        window_size = min(len(term_words), 4)
+        for i in range(len(segments) - window_size + 1):
+            combined_words = []
+            for j in range(window_size):
+                combined_words.extend(
+                    re.split(r"[\s\-/]+", segments[i + j].get("text", "").lower())
+                )
+            combined_stems = {_crude_stem(w) for w in combined_words if len(w) > 2}
+            if term_stems.issubset(combined_stems):
+                if _add_hit(segments[i].get("start", 0)):
+                    break
+
+    occurrences.sort(key=lambda o: o["timestamp_sec"])
     return occurrences
 
 
@@ -468,6 +548,16 @@ async def embed_transcript_node(state: GraphState) -> dict:
     run_obj = state.get("run")
     if run_obj:
         video_id = run_obj.video_id
+    if video_id is None:
+        # Resolve from DB so we never save to data/embeddings/None (Q&A looks up by real video_id).
+        session_factory = state["session_factory"]
+        async with session_factory() as sess:
+            result = await sess.execute(select(AnalysisRun).where(AnalysisRun.id == run_id))
+            run_from_db = result.scalar_one_or_none()
+            if run_from_db is not None:
+                video_id = run_from_db.video_id
+    if video_id is None:
+        return {"embedding_error": "Could not resolve video_id for this run."}
 
     logger.info("[run=%d] embed_transcript: starting", run_id)
     await _set_step(state, "embedding_transcript")

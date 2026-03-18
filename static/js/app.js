@@ -470,7 +470,8 @@ function vsMindMap() {
               'label': 'data(label)', 'background-color': 'data(color)',
               'color': '#334155', 'font-size': '11px', 'text-valign': 'bottom',
               'text-margin-y': 6, 'width': 32, 'height': 32,
-              'border-width': 2, 'border-color': '#e2e8f0'
+              'border-width': 2, 'border-color': '#e2e8f0',
+              'cursor': 'pointer'
             }},
             { selector: 'edge', style: {
               'label': 'data(label)', 'font-size': '9px', 'color': '#94a3b8',
@@ -485,6 +486,58 @@ function vsMindMap() {
           layout: { name: 'cose', animate: true, animationDuration: 500, nodeRepulsion: 8000 }
         });
         self.cy.fit(undefined, 48);
+
+        // Build chapter lookup: chapter_id → {title, start_time_sec, start_display}
+        var chapterIndex = {};
+        try {
+          var chIndexEl = document.getElementById('vs-chapters-index');
+          if (chIndexEl) {
+            (JSON.parse(chIndexEl.textContent) || []).forEach(function (ch) {
+              if (ch.chapter_id) chapterIndex[ch.chapter_id] = ch;
+            });
+          }
+        } catch (e) {}
+
+        self.cy.on('tap', 'node', function (evt) {
+          var d = evt.target.data();
+          var detail = document.getElementById('vs-mind-map-detail');
+          document.getElementById('vs-mm-detail-label').textContent = d.label || '';
+          document.getElementById('vs-mm-detail-type').textContent = d.type || '';
+          document.getElementById('vs-mm-detail-desc').textContent = d.description || '';
+
+          var chipsEl = document.getElementById('vs-mm-detail-chapters');
+          chipsEl.innerHTML = '';
+          var ids = d.chapter_ids || [];
+          if (ids.length) {
+            var heading = document.createElement('span');
+            heading.className = 'w-full text-xs text-slate-400 mb-1';
+            heading.textContent = 'Appears in:';
+            chipsEl.appendChild(heading);
+            ids.forEach(function (cid) {
+              var ch = chapterIndex[cid];
+              var btn = document.createElement('button');
+              btn.className = 'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 transition-colors';
+              if (ch) {
+                btn.textContent = ch.start_display + ' ' + ch.title;
+                btn.onclick = function () {
+                  if (window.__vsSetActiveView) window.__vsSetActiveView('read');
+                  if (window.seekVideo) window.seekVideo(ch.start_time_sec);
+                };
+              } else {
+                btn.textContent = cid;
+                btn.disabled = true;
+              }
+              chipsEl.appendChild(btn);
+            });
+          }
+          detail.classList.remove('hidden');
+        });
+
+        self.cy.on('tap', function (evt) {
+          if (evt.target === self.cy) {
+            document.getElementById('vs-mind-map-detail').classList.add('hidden');
+          }
+        });
       };
       tick(0);
     }
