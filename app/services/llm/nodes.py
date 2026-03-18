@@ -557,7 +557,11 @@ async def embed_transcript_node(state: GraphState) -> dict:
             if run_from_db is not None:
                 video_id = run_from_db.video_id
     if video_id is None:
-        return {"embedding_error": "Could not resolve video_id for this run."}
+        msg = "Could not resolve video_id for this run."
+        return {
+            "embedding_error": msg,
+            "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+        }
 
     logger.info("[run=%d] embed_transcript: starting", run_id)
     await _set_step(state, "embedding_transcript")
@@ -571,7 +575,11 @@ async def embed_transcript_node(state: GraphState) -> dict:
             segments = []
 
     if not segments and not transcript_source.raw_text.strip():
-        return {"embedding_error": "No transcript available for embedding."}
+        msg = "No transcript available for embedding."
+        return {
+            "embedding_error": msg,
+            "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+        }
 
     try:
         from langchain_text_splitters import RecursiveCharacterTextSplitter
