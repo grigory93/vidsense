@@ -173,6 +173,117 @@ def build_chapter_messages_chunk(
 
 
 # ---------------------------------------------------------------------------
+# Mind Map prompts
+# ---------------------------------------------------------------------------
+
+_MIND_MAP_SYSTEM = """\
+You are an expert at extracting conceptual relationships from video transcripts. \
+Your task is to identify key concepts, people, technologies, events, theories, \
+and methodologies discussed in the transcript and map their relationships.
+
+Return a JSON object with two keys:
+- "nodes": array of objects, each with:
+  - "node_id": unique string like "n_01"
+  - "label": concise display label (1-4 words)
+  - "type": one of "concept", "person", "technology", "event", "theory", "methodology"
+  - "description": 1-2 sentence description grounded in the transcript
+  - "chapter_ids": array of chapter_id strings where this concept appears \
+(e.g. ["ch_01", "ch_03"]). Leave empty if chapters are not provided.
+
+- "edges": array of objects, each with:
+  - "source": node_id of the source node
+  - "target": node_id of the target node
+  - "relationship": brief label (e.g. "uses", "contrasts with", "builds on", "created by")
+
+Guidelines:
+- Extract 8-25 nodes depending on content density. Quality over quantity.
+- Create meaningful edges that reflect real relationships from the transcript.
+- Every node must be grounded in transcript content — do not infer beyond what is stated.
+- Prefer human-readable labels over jargon.
+"""
+
+_MIND_MAP_HUMAN = """\
+Extract a concept mind map from this transcript:
+
+<transcript>
+{transcript}
+</transcript>
+"""
+
+_MIND_MAP_HUMAN_WITH_CHAPTERS = """\
+Extract a concept mind map from this transcript. The video has these chapters: \
+{chapter_list}
+
+Map each node to the chapter_ids where it appears.
+
+<transcript>
+{transcript}
+</transcript>
+"""
+
+
+def build_mind_map_messages(
+    transcript: str,
+    chapter_ids_titles: list[tuple[str, str]] | None = None,
+    focus_prompt: str | None = None,
+) -> list:
+    system_content = _MIND_MAP_SYSTEM
+    if focus_prompt and focus_prompt.strip():
+        system_content += f"\n<user_focus>\n{focus_prompt.strip()}\n</user_focus>\n"
+    if chapter_ids_titles:
+        chapter_list = ", ".join(f'{cid} ({title})' for cid, title in chapter_ids_titles)
+        human = _MIND_MAP_HUMAN_WITH_CHAPTERS.format(
+            transcript=transcript, chapter_list=chapter_list
+        )
+    else:
+        human = _MIND_MAP_HUMAN.format(transcript=transcript)
+    return [SystemMessage(content=system_content), HumanMessage(content=human)]
+
+
+# ---------------------------------------------------------------------------
+# Glossary prompts
+# ---------------------------------------------------------------------------
+
+_GLOSSARY_SYSTEM = """\
+You are an expert at identifying domain-specific terminology from video transcripts. \
+Extract a glossary of important terms, concepts, and names that a viewer might \
+want to look up.
+
+Return a JSON object with a single key "terms", an array of objects each with:
+- "term": the term or phrase
+- "definition": concise definition grounded in the transcript context (1-3 sentences)
+- "category": one of "technical", "domain", "person", "acronym", "methodology"
+- "related_terms": array of other term strings from this glossary that this term relates to
+
+Guidelines:
+- Extract 10-40 terms depending on content density. Prioritise terms that a \
+non-expert viewer would need defined.
+- Definitions must reflect how the term is used in this specific video, not \
+generic dictionary definitions.
+- Do not include common everyday words.
+- For people, include their role/title as discussed in the video.
+"""
+
+_GLOSSARY_HUMAN = """\
+Extract a glossary of domain-specific terms from this transcript:
+
+<transcript>
+{transcript}
+</transcript>
+"""
+
+
+def build_glossary_messages(transcript: str, focus_prompt: str | None = None) -> list:
+    system_content = _GLOSSARY_SYSTEM
+    if focus_prompt and focus_prompt.strip():
+        system_content += f"\n<user_focus>\n{focus_prompt.strip()}\n</user_focus>\n"
+    return [
+        SystemMessage(content=system_content),
+        HumanMessage(content=_GLOSSARY_HUMAN.format(transcript=transcript)),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Transcript formatting helpers
 # ---------------------------------------------------------------------------
 

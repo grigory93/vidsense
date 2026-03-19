@@ -7,9 +7,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.schemas import ChapterListSchema, ChapterSchema, SummarySchema
+from app.models.schemas import (
+    ChapterListSchema,
+    ChapterSchema,
+    GlossaryListSchema,
+    GlossaryTermSchema,
+    MindMapEdgeSchema,
+    MindMapNodeSchema,
+    MindMapSchema,
+    SummarySchema,
+)
 from app.services.llm.nodes import (
+    _find_term_occurrences,
+    embed_transcript_node,
     extract_chapters_node,
+    extract_glossary_node,
+    extract_mind_map_node,
+    finalize_run_node,
     gen_summaries_node,
     validate_input_node,
 )
@@ -112,7 +126,6 @@ async def test_gen_summaries_returns_result():
     llm = _make_llm(expected)
     ts = _make_transcript_source("Full transcript text here.")
     state = {
-        "llm": llm,
         "transcript_source": ts,
         "focus_prompt": None,
         "pipeline_failed": False,
@@ -120,7 +133,8 @@ async def test_gen_summaries_returns_result():
         "run_id": 1,
         "session_factory": _make_session_factory(),
     }
-    result = await gen_summaries_node(state)
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await gen_summaries_node(state)
     assert result["summary_result"] == expected
     assert result["summary_error"] is None
 
@@ -134,9 +148,6 @@ async def test_gen_summaries_skips_when_pipeline_failed():
 
 @pytest.mark.asyncio
 async def test_gen_summaries_records_error_on_failure():
-    from unittest.mock import AsyncMock, MagicMock
-    from pydantic import ValidationError
-
     llm = MagicMock()
     structured = MagicMock()
     structured.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
@@ -144,7 +155,6 @@ async def test_gen_summaries_records_error_on_failure():
 
     ts = _make_transcript_source("Some text.")
     state = {
-        "llm": llm,
         "transcript_source": ts,
         "focus_prompt": None,
         "pipeline_failed": False,
@@ -152,7 +162,8 @@ async def test_gen_summaries_records_error_on_failure():
         "run_id": 1,
         "session_factory": _make_session_factory(),
     }
-    result = await gen_summaries_node(state)
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await gen_summaries_node(state)
     assert result["summary_result"] is None
     assert result["summary_error"] is not None
     assert len(result["errors"]) > 0
@@ -178,7 +189,6 @@ async def test_extract_chapters_returns_result():
     llm = _make_llm(expected)
     ts = _make_transcript_source("Transcript.", segments=[{"text": "Hello", "start": 0, "duration": 5}])
     state = {
-        "llm": llm,
         "transcript_source": ts,
         "focus_prompt": None,
         "pipeline_failed": False,
@@ -186,7 +196,8 @@ async def test_extract_chapters_returns_result():
         "run_id": 1,
         "session_factory": _make_session_factory(),
     }
-    result = await extract_chapters_node(state)
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await extract_chapters_node(state)
     assert result["chapters_result"] == expected
     assert result["chapters_error"] is None
 
@@ -196,6 +207,426 @@ async def test_extract_chapters_skips_when_pipeline_failed():
     state = {"pipeline_failed": True}
     result = await extract_chapters_node(state)
     assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# extract_mind_map_node
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_mind_map_returns_result():
+    nodes = [
+        MindMapNodeSchema(
+            node_id="n_01",
+            label="Machine Learning",
+            type="concept",
+            description="ML is discussed in the intro.",
+            chapter_ids=["ch_01"],
+        ),
+    ]
+    edges = [
+        MindMapEdgeSchema(source="n_01", target="n_02", relationship="uses"),
+    ]
+    expected = MindMapSchema(nodes=nodes, edges=edges)
+    llm = _make_llm(expected)
+    ts = _make_transcript_source("Transcript about ML.")
+    state = {
+        "transcript_source": ts,
+        "focus_prompt": None,
+        "pipeline_failed": False,
+        "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
+        "chapters_result": ChapterListSchema(
+            chapters=[
+                ChapterSchema(
+                    chapter_id="ch_01",
+                    title="Intro",
+                    start_time_sec=0,
+                    end_time_sec=60,
+                    summary="S",
+                    key_points=["K"],
+                    transcript_segment="T",
+                ),
+            ]
+        ),
+    }
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await extract_mind_map_node(state)
+    assert result["mind_map_result"] == expected
+    assert result["mind_map_error"] is None
+
+
+@pytest.mark.asyncio
+async def test_extract_mind_map_skips_when_pipeline_failed():
+    state = {"pipeline_failed": True}
+    result = await extract_mind_map_node(state)
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_extract_mind_map_records_error_on_failure():
+    llm = MagicMock()
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
+    llm.with_structured_output = MagicMock(return_value=structured)
+    ts = _make_transcript_source("Some text.")
+    state = {
+        "transcript_source": ts,
+        "pipeline_failed": False,
+        "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
+    }
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await extract_mind_map_node(state)
+    assert result["mind_map_result"] is None
+    assert result["mind_map_error"] is not None
+    assert len(result["errors"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# extract_glossary_node
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_glossary_returns_result():
+    terms = [
+        GlossaryTermSchema(
+            term="API",
+            definition="Application programming interface.",
+            category="acronym",
+            related_terms=[],
+        ),
+    ]
+    expected = GlossaryListSchema(terms=terms)
+    llm = _make_llm(expected)
+    segments = [
+        {"text": "We use the API here.", "start": 10, "duration": 2},
+        {"text": "More content.", "start": 20, "duration": 2},
+    ]
+    ts = _make_transcript_source("Transcript.", segments=segments)
+    state = {
+        "transcript_source": ts,
+        "focus_prompt": None,
+        "pipeline_failed": False,
+        "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
+    }
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await extract_glossary_node(state)
+    assert result["glossary_result"] == expected
+    assert result["glossary_error"] is None
+
+
+@pytest.mark.asyncio
+async def test_extract_glossary_skips_when_pipeline_failed():
+    state = {"pipeline_failed": True}
+    result = await extract_glossary_node(state)
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_extract_glossary_records_error_on_failure():
+    llm = MagicMock()
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
+    llm.with_structured_output = MagicMock(return_value=structured)
+    ts = _make_transcript_source("Some text.")
+    state = {
+        "transcript_source": ts,
+        "pipeline_failed": False,
+        "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
+    }
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        result = await extract_glossary_node(state)
+    assert result["glossary_result"] is None
+    assert result["glossary_error"] is not None
+    assert len(result["errors"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# embed_transcript_node
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_embed_transcript_skips_when_pipeline_failed():
+    state = {"pipeline_failed": True}
+    result = await embed_transcript_node(state)
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_embed_transcript_returns_error_when_no_video_id():
+    """When run has no video_id and DB lookup returns None, node returns embedding_error."""
+    ts = _make_transcript_source("Some text.", segments=[{"text": "Hi", "start": 0, "duration": 1}])
+    state = {
+        "transcript_source": ts,
+        "pipeline_failed": False,
+        "run_id": 1,
+        "run": None,
+        "session_factory": _make_session_factory(),
+    }
+    result = await embed_transcript_node(state)
+    assert result.get("embedding_error") is not None
+    assert "video_id" in result["embedding_error"].lower() or "resolve" in result["embedding_error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_embed_transcript_returns_error_when_no_transcript():
+    """When segments are empty and raw_text is empty, node returns embedding_error."""
+    ts = _make_transcript_source("   ", segments=[])
+    run = MagicMock()
+    run.video_id = 1
+    state = {
+        "transcript_source": ts,
+        "pipeline_failed": False,
+        "run_id": 1,
+        "run": run,
+        "session_factory": _make_session_factory(),
+    }
+    result = await embed_transcript_node(state)
+    assert result.get("embedding_error") is not None
+    assert "transcript" in result["embedding_error"].lower() or "no " in result["embedding_error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# finalize_run_node
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_finalize_run_sets_complete_when_summaries_and_chapters_ok():
+    from app.models.db import AnalysisRunStatus
+
+    run = MagicMock()
+    run.id = 1
+    run.video_id = 1
+    run.status = None
+    run.error_message = None
+    run.completed_at = None
+    run.current_step = "generating"
+    session = MagicMock()
+    session.commit = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=run)
+    session.execute = AsyncMock(return_value=execute_result)
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    state = {
+        "run_id": 1,
+        "session_factory": factory,
+        "pipeline_failed": False,
+        "summary_result": SummarySchema(
+            thesis="T",
+            executive="E",
+            detailed_outline=["D"],
+        ),
+        "chapters_result": ChapterListSchema(
+            chapters=[
+                ChapterSchema(
+                    chapter_id="ch_01",
+                    title="Intro",
+                    start_time_sec=0,
+                    end_time_sec=60,
+                    summary="S",
+                    key_points=["K"],
+                    transcript_segment="T",
+                ),
+            ]
+        ),
+        "summary_error": None,
+        "chapters_error": None,
+    }
+    result = await finalize_run_node(state)
+    assert result["final_status"] == AnalysisRunStatus.complete
+    assert run.status == AnalysisRunStatus.complete
+    assert run.completed_at is not None
+    assert run.current_step is None
+
+
+@pytest.mark.asyncio
+async def test_finalize_run_sets_partial_when_only_summaries():
+    from app.models.db import AnalysisRunStatus
+
+    run = MagicMock()
+    run.id = 1
+    run.video_id = 1
+    run.status = None
+    run.error_message = None
+    run.completed_at = None
+    run.current_step = None
+    session = MagicMock()
+    session.commit = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=run)
+    session.execute = AsyncMock(return_value=execute_result)
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    state = {
+        "run_id": 1,
+        "session_factory": factory,
+        "pipeline_failed": False,
+        "summary_result": SummarySchema(
+            thesis="T",
+            executive="E",
+            detailed_outline=["D"],
+        ),
+        "chapters_result": None,
+        "summary_error": None,
+        "chapters_error": "Chapter extraction failed.",
+    }
+    result = await finalize_run_node(state)
+    assert result["final_status"] == AnalysisRunStatus.partial
+    assert run.status == AnalysisRunStatus.partial
+    assert run.error_message is not None
+    assert "Chapter" in run.error_message
+
+
+@pytest.mark.asyncio
+async def test_finalize_run_sets_failed_when_pipeline_failed():
+    from app.models.db import AnalysisRunStatus
+
+    run = MagicMock()
+    run.id = 1
+    run.video_id = 1
+    run.status = None
+    run.error_message = None
+    run.completed_at = None
+    run.current_step = "failed"
+    session = MagicMock()
+    session.commit = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=run)
+    session.execute = AsyncMock(return_value=execute_result)
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    state = {
+        "run_id": 1,
+        "session_factory": factory,
+        "pipeline_failed": True,
+        "errors": ["No transcript available."],
+    }
+    result = await finalize_run_node(state)
+    assert result["final_status"] == AnalysisRunStatus.failed
+    assert run.status == AnalysisRunStatus.failed
+    assert "No transcript" in (run.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_finalize_run_appends_v2_errors_to_error_message():
+    """V2 feature errors are appended to error_message but do not change status."""
+    from app.models.db import AnalysisRunStatus
+
+    run = MagicMock()
+    run.id = 1
+    run.video_id = 1
+    run.status = None
+    run.error_message = None
+    run.completed_at = None
+    run.current_step = None
+    session = MagicMock()
+    session.commit = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=run)
+    session.execute = AsyncMock(return_value=execute_result)
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    state = {
+        "run_id": 1,
+        "session_factory": factory,
+        "pipeline_failed": False,
+        "summary_result": SummarySchema(
+            thesis="T",
+            executive="E",
+            detailed_outline=["D"],
+        ),
+        "chapters_result": ChapterListSchema(
+            chapters=[
+                ChapterSchema(
+                    chapter_id="ch_01",
+                    title="Intro",
+                    start_time_sec=0,
+                    end_time_sec=60,
+                    summary="S",
+                    key_points=["K"],
+                    transcript_segment="T",
+                ),
+            ]
+        ),
+        "summary_error": None,
+        "chapters_error": None,
+        "mind_map_error": "Mind map extraction failed.",
+        "glossary_error": None,
+        "embedding_error": "Embedding failed.",
+    }
+    result = await finalize_run_node(state)
+    assert result["final_status"] == AnalysisRunStatus.complete
+    assert run.status == AnalysisRunStatus.complete
+    assert "Mind map" in (run.error_message or "")
+    assert "Embedding" in (run.error_message or "")
+
+
+# ---------------------------------------------------------------------------
+# _find_term_occurrences
+# ---------------------------------------------------------------------------
+
+
+def test_find_term_occurrences_exact_match():
+    segments = [
+        {"text": "Hello world", "start": 0, "duration": 2},
+        {"text": "The API is used here.", "start": 10, "duration": 3},
+        {"text": "More text.", "start": 20, "duration": 1},
+    ]
+    result = _find_term_occurrences("API", segments)
+    assert len(result) == 1
+    assert result[0]["timestamp_sec"] == 10
+    assert "display" in result[0]
+
+
+def test_find_term_occurrences_empty_segments():
+    assert _find_term_occurrences("term", []) == []
+
+
+def test_find_term_occurrences_multi_word_span():
+    """Multi-word term can span consecutive segments (sliding window or stem match)."""
+    segments = [
+        {"text": "We discuss", "start": 0, "duration": 1},
+        {"text": "neural network", "start": 5, "duration": 2},
+        {"text": "architecture.", "start": 10, "duration": 1},
+    ]
+    result = _find_term_occurrences("neural network architecture", segments)
+    assert len(result) >= 1
+    # Implementation may attribute to first segment of matching window (0) or segment start (5)
+    assert result[0]["timestamp_sec"] in (0, 5)
+
+
+def test_find_term_occurrences_stem_match():
+    """Stem-based match: 'algorithm' matches segment containing 'algorithms'."""
+    segments = [
+        {"text": "Algorithms are important.", "start": 30, "duration": 2},
+    ]
+    result = _find_term_occurrences("algorithm", segments)
+    assert len(result) == 1
+    assert result[0]["timestamp_sec"] == 30
 
 
 # ---------------------------------------------------------------------------

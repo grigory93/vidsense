@@ -9,13 +9,16 @@
 {% block main_class %}{% endblock %}
 
 {% block nav_breadcrumb %}
-<div class="flex items-center gap-1.5 text-sm text-slate-400 min-w-0">
-  <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+<div class="flex items-center gap-1.5 text-sm min-w-0 max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg">
+  <svg class="w-3.5 h-3.5 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
     <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
   </svg>
-  <span class="truncate text-slate-600 font-medium max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg">
-    {{ video.title or 'Video' }}
-  </span>
+  <div class="min-w-0 truncate flex items-baseline gap-1 flex-wrap">
+    <span class="text-slate-800 font-semibold text-base truncate">{{ video.title or 'Video' }}</span>
+    {% if initial_focus_prompt and initial_focus_prompt.strip() %}
+    <span class="shrink-0 text-slate-500 font-normal text-sm">· {{ (initial_focus_prompt.strip().split()[:5] | join(' ')) }}</span>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}
 

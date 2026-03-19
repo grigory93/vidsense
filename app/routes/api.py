@@ -9,13 +9,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings as app_settings
 from app.database import get_session
-from app.models.db import AnalysisRun, AnalysisRunStatus, Chapter, Summary, Video
+from app.models.db import AnalysisRun, AnalysisRunStatus, Chapter, QAMessage, Summary, Video
 from app.models.schemas import (
     AnalyzeRequestSchema,
     AnalysisStatusSchema,
@@ -23,8 +28,14 @@ from app.models.schemas import (
     RegenerateRequestSchema,
     SummaryResponseSchema,
 )
+from app.services.llm.providers import TASK_QA, get_embedding_model, get_llm
 from app.services.processing import start_analysis
 from app.services.youtube import get_transcript_for_video, ingest_video
+
+
+class AskRequest(BaseModel):
+    question: str
+    conversation_id: str | None = None
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -125,9 +136,7 @@ async def analyze(
             }
 
     # Create the run record so we can return run_id immediately
-    from app.models.db import AnalysisRun as Run
-
-    run = Run(
+    run = AnalysisRun(
         video_id=video.id,
         focus_prompt=body.focus_prompt,
         status=AnalysisRunStatus.pending,
@@ -382,6 +391,154 @@ async def regenerate(
     )
 
     return {"run_id": run.id, "video_id": video_id, "cached": False}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/video/{video_id}/ask
+# ---------------------------------------------------------------------------
+
+
+@router.post("/video/{video_id}/ask")
+async def ask_question(
+    video_id: int,
+    body: AskRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Semantic Q&A endpoint using RAG over the transcript FAISS index.
+    Accepts { question: str, conversation_id: str | null }.
+    Returns { answer: str, citations: [...], conversation_id: str }.
+    """
+    from langchain_community.vectorstores import FAISS
+
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=422, detail={"message": "Question cannot be empty."})
+
+    conversation_id = body.conversation_id or str(uuid.uuid4())
+
+    video = (
+        await session.execute(select(Video).where(Video.id == video_id))
+    ).scalar_one_or_none()
+    if video is None:
+        raise HTTPException(status_code=404, detail={"message": "Video not found."})
+
+    index_path = os.path.join(app_settings.embeddings_dir, str(video_id))
+    if not os.path.isdir(index_path):
+        raise HTTPException(
+            status_code=404,
+            detail={"message": "No embeddings available for this video. Please regenerate the analysis."},
+        )
+
+    try:
+        embedding_model = get_embedding_model()
+        store = FAISS.load_local(
+            index_path, embedding_model, allow_dangerous_deserialization=True
+        )
+
+        # Load history.  Scope by video_id so a reused conversation_id cannot
+        # leak history from a different video.  Each turn = 1 user + 1 assistant
+        # message, so fetch at most qa_max_history * 2 rows.
+        history_rows = (
+            await session.execute(
+                select(QAMessage)
+                .where(
+                    QAMessage.video_id == video_id,
+                    QAMessage.conversation_id == conversation_id,
+                )
+                .order_by(QAMessage.created_at.desc())
+                .limit(app_settings.qa_max_history * 2)
+            )
+        ).scalars().all()
+        history_rows.reverse()
+
+        # Expand the retrieval query with a short excerpt of the last assistant
+        # answer so that thin follow-ups ("tell me more", "explain the second
+        # point") anchor to the right transcript region.  We deliberately keep
+        # this short (100 chars) so the current question still dominates the
+        # embedding direction.
+        retrieval_query = question
+        last_assistant = next(
+            (r.content for r in reversed(history_rows) if r.role == "assistant"), None
+        )
+        if last_assistant:
+            retrieval_query = last_assistant[:100] + " " + question
+
+        docs = store.similarity_search(retrieval_query, k=5)
+
+        context_parts = []
+        citations = []
+        seen_timestamps: set[int] = set()
+        for doc in docs:
+            context_parts.append(doc.page_content)
+            ts = int(doc.metadata.get("start_time_sec", 0))
+            if ts not in seen_timestamps:
+                seen_timestamps.add(ts)
+                m, s = divmod(ts, 60)
+                h, m_r = divmod(m, 60)
+                display = f"{h}:{m_r:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+                citations.append({"start_time_sec": ts, "display": display})
+
+        citations.sort(key=lambda c: c["start_time_sec"])
+
+        # System message carries role description only — no context chunks here.
+        # Injecting context into the system message would share it across all
+        # history turns, making prior turns appear grounded in this turn's chunks.
+        messages = [
+            SystemMessage(content=(
+                "You are a helpful assistant answering questions about a video based "
+                "on its transcript. Ground your answers strictly in the provided context "
+                "shown before each question. If the context doesn't contain enough "
+                "information, say so."
+            ))
+        ]
+
+        for row in history_rows:
+            if row.role == "user":
+                messages.append(HumanMessage(content=row.content))
+            else:
+                messages.append(AIMessage(content=row.content))
+
+        # Inject retrieved context immediately before the current question so it
+        # is scoped to this turn only and doesn't contaminate history turns.
+        messages.append(HumanMessage(content=(
+            "Context from transcript:\n" + "\n---\n".join(context_parts)
+            + f"\n\nQuestion: {question}"
+        )))
+
+        llm = get_llm(task=TASK_QA)
+        response = await llm.ainvoke(messages)
+        answer = response.content
+
+        session.add(QAMessage(
+            video_id=video_id,
+            conversation_id=conversation_id,
+            role="user",
+            content=question,
+        ))
+        session.add(QAMessage(
+            video_id=video_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=answer,
+            citations_json=json.dumps(citations),
+        ))
+        await session.commit()
+
+        return {
+            "answer": answer,
+            "citations": citations,
+            "conversation_id": conversation_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Q&A error for video %d: %s", video_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "A temporary service error occurred. Please try again."},
+        )
 
 
 # ---------------------------------------------------------------------------

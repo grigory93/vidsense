@@ -9,17 +9,34 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # LLM
+    # LLM — global defaults
     llm_provider: str = Field(default="openai", description="LLM provider: openai, google, anthropic, ollama")
-    llm_model: str = Field(default="gpt-4o-mini", description="Model name for the chosen provider")
+    llm_model: str = Field(default="gpt-4o-mini", description="Default model name for all tasks")
     openai_api_key: str = Field(default="", description="OpenAI API key")
     google_api_key: str = Field(default="", description="Google Gemini API key")
     anthropic_api_key: str = Field(default="", description="Anthropic API key")
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama base URL")
 
-    # Database
+    # LLM — per-task model overrides (all optional, fall back to llm_model)
+    llm_model_summaries: str | None = Field(default=None, description="Model override for summary generation")
+    llm_model_chapters: str | None = Field(default=None, description="Model override for chapter extraction")
+    llm_model_mind_map: str | None = Field(default=None, description="Model override for mind map extraction")
+    llm_model_glossary: str | None = Field(default=None, description="Model override for glossary extraction")
+    llm_model_qa: str | None = Field(default=None, description="Model override for Q&A answer generation")
+
+    # Embeddings
+    embedding_model: str = Field(default="text-embedding-3-small", description="Embedding model name")
+    embeddings_dir: str = Field(default="data/embeddings", description="Directory for FAISS index files")
+
+    # Q&A
+    qa_max_history: int = Field(
+        default=10,
+        description="Max conversation turns (user + assistant pair) to include in Q&A context",
+    )
+
+    # Database (path under data/ for consistency with embeddings and .gitignore)
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./vidsense.db",
+        default="sqlite+aiosqlite:///./data/vidsense.db",
         description="SQLAlchemy async database URL",
     )
 

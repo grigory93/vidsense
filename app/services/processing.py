@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.models.db import AnalysisRun, AnalysisRunStatus, TranscriptSource
 from app.services.llm.graph import run_pipeline
-from app.services.llm.providers import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -34,16 +33,14 @@ async def start_analysis(
     run.status = AnalysisRunStatus.processing
     await session.commit()
 
-    llm = get_llm()
     run_id = run.id
     logger.info(
-        "[run=%d] pipeline starting — video_id=%d focus=%r llm=%s",
-        run_id, run.video_id, run.focus_prompt, type(llm).__name__,
+        "[run=%d] pipeline starting — video_id=%d focus=%r",
+        run_id, run.video_id, run.focus_prompt,
     )
 
     try:
         await run_pipeline(
-            llm=llm,
             session_factory=AsyncSessionLocal,
             run=run,
             transcript_source=transcript_source,

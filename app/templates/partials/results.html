@@ -33,6 +33,52 @@
 {% endif %}
 
 <!-- ================================================================
+     TOP-LEVEL VIEW TABS: Read | Mind Map | Glossary | Ask
+     ================================================================ -->
+<div x-data="{ activeView: (window.__vsActiveView || 'read') }"
+     x-init="
+       window.__vsActiveView = activeView;
+       window.__vsSetActiveView = (v) => { activeView = v; };
+       $watch('activeView', v => {
+         window.__vsActiveView = v;
+         if (v === 'mind_map') {
+           $nextTick(() => requestAnimationFrame(() => {
+             if (typeof window.__vsMindMapRender === 'function') window.__vsMindMapRender();
+           }));
+         }
+       });
+     ">
+
+  <nav class="flex gap-1 mb-6 border-b border-slate-200 -mx-1 px-1" role="tablist" aria-label="View tabs">
+    <template x-for="tab in [
+      { id: 'read',     label: 'Read',      icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
+      { id: 'mind_map', label: 'Mind Map',   icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' },
+      { id: 'glossary', label: 'Glossary',   icon: 'M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129' },
+      { id: 'ask',      label: 'Ask',        icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' }
+    ]" :key="tab.id">
+      <button
+        role="tab"
+        :aria-selected="activeView === tab.id"
+        @click="activeView = tab.id"
+        class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-b-2 transition-colors -mb-px"
+        :class="activeView === tab.id
+          ? 'border-brand-600 text-brand-700'
+          : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path :d="tab.icon" />
+        </svg>
+        <span x-text="tab.label"></span>
+      </button>
+    </template>
+  </nav>
+
+  <!-- ================================================================
+       READ VIEW — Summaries + Chapters (existing V1 content)
+       ================================================================ -->
+  <div x-show="activeView === 'read'">
+
+<!-- ================================================================
      LAYERED SUMMARIES
      ================================================================ -->
 {% if has_summaries %}
@@ -492,6 +538,247 @@
   {% endif %}
 {% endif %}
 
-<script>
-  window.__vsProcessingComplete = true;
-</script>
+  </div><!-- /read view -->
+
+  <!-- ================================================================
+       MIND MAP VIEW
+       ================================================================ -->
+  <div x-show="activeView === 'mind_map'" x-cloak>
+    {% if mind_map %}
+    <div x-data="vsMindMap()" x-init="init()">
+
+    <!-- Search bar -->
+    <div class="relative mb-3">
+      <div class="relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input type="text"
+               x-model="searchQuery"
+               @input="onSearch()"
+               @keydown.escape="clearSearch()"
+               @keydown.enter.prevent="selectFirstResult()"
+               @focus="showDropdown = searchResults.length > 0"
+               @click.outside="showDropdown = false"
+               placeholder="Search nodes by name or description…"
+               class="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-colors">
+        <button x-show="searchQuery" @click="clearSearch()"
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <!-- Results dropdown -->
+      <div x-show="showDropdown && searchResults.length > 0"
+           x-cloak
+           class="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+        <template x-for="result in searchResults" :key="result.id">
+          <button @click="selectNode(result.id)"
+                  class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2 border-b border-slate-100 last:border-0 transition-colors">
+            <span class="font-medium text-slate-800 truncate" x-text="result.label"></span>
+            <span class="shrink-0 px-1.5 py-0.5 text-xs rounded-full bg-slate-100 text-slate-500 capitalize" x-text="result.type"></span>
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <div id="vs-mind-map-container" class="w-full rounded-xl border border-slate-200 bg-white" style="height: 480px;"></div>
+    <div id="vs-mind-map-detail" class="hidden mt-3 p-4 rounded-xl border border-slate-200 bg-white">
+      <div class="flex items-start justify-between gap-2 mb-1">
+        <div class="flex items-center gap-2">
+          <span id="vs-mm-detail-label" class="font-semibold text-slate-800 text-sm"></span>
+          <span id="vs-mm-detail-type" class="px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-500"></span>
+        </div>
+        <button onclick="document.getElementById('vs-mind-map-detail').classList.add('hidden')"
+                class="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <p id="vs-mm-detail-desc" class="text-slate-600 text-sm leading-relaxed mb-2"></p>
+      <div id="vs-mm-detail-chapters" class="flex flex-wrap gap-1.5"></div>
+    </div>
+    <script type="application/json" id="vs-mind-map-data">{{ mind_map | tojson }}</script>
+    <script type="application/json" id="vs-chapters-index">{{ (chapters or []) | tojson }}</script>
+    </div><!-- end vsMindMap wrapper -->
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-16 text-center">
+      <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+        <svg class="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+        </svg>
+      </div>
+      <p class="text-slate-500 font-medium">Mind map not available</p>
+      <p class="text-slate-400 text-sm mt-1">{% if is_partial %}This feature may not have completed. Try regenerating.{% else %}No concept graph was generated for this video.{% endif %}</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ================================================================
+       GLOSSARY VIEW
+       ================================================================ -->
+  <div x-show="activeView === 'glossary'" x-cloak>
+    {% if glossary_terms %}
+    <div x-data="vsGlossary()" x-init="init()">
+      <div class="flex items-center gap-2 mb-4">
+        <div class="relative flex-1">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input type="text" x-model="search" placeholder="Search terms..."
+                 class="w-full pl-10 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+        </div>
+        <span class="text-xs text-slate-400" x-text="filtered().length + ' terms'"></span>
+      </div>
+
+      <div class="flex flex-wrap gap-1.5 mb-4">
+        <template x-for="cat in categories" :key="cat">
+          <button @click="toggleCategory(cat)"
+                  class="px-2.5 py-1 text-xs rounded-full border transition-colors"
+                  :class="activeCategories.includes(cat)
+                    ? 'bg-brand-50 border-brand-300 text-brand-700'
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'">
+            <span x-text="cat"></span>
+          </button>
+        </template>
+      </div>
+
+      <div class="space-y-3">
+        <template x-for="term in filtered()" :key="term.term">
+          <div class="border border-slate-200 rounded-lg p-4 hover:border-slate-300 transition-colors">
+            <div class="flex items-start justify-between gap-2 mb-1">
+              <h3 class="font-semibold text-slate-800 text-sm" x-text="term.term"></h3>
+              <span class="shrink-0 px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-500" x-text="term.category"></span>
+            </div>
+            <p class="text-slate-600 text-sm leading-relaxed mb-2" x-text="term.definition"></p>
+            <div class="flex flex-wrap gap-1.5" x-show="term.occurrences && term.occurrences.length">
+              <template x-for="(occ, i) in term.occurrences" :key="i">
+                <button @click="window.seekVideo(occ.timestamp_sec)"
+                        class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors cursor-pointer">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  </svg>
+                  <span x-text="occ.display"></span>
+                  <span x-show="i === 0" class="ml-0.5 text-brand-500 font-semibold">first</span>
+                </button>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+    <script type="application/json" id="vs-glossary-data">{{ glossary_terms | tojson }}</script>
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-16 text-center">
+      <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+        <svg class="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+        </svg>
+      </div>
+      <p class="text-slate-500 font-medium">Glossary not available</p>
+      <p class="text-slate-400 text-sm mt-1">{% if is_partial %}Glossary extraction may not have completed. Try regenerating.{% else %}No terms were extracted for this video.{% endif %}</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ================================================================
+       ASK (Q&A) VIEW
+       ================================================================ -->
+  <div x-show="activeView === 'ask'" x-cloak>
+    {% if has_embeddings %}
+    <div x-data="vsQA({{ video_id }})" class="flex flex-col" style="height: calc(100vh - 12rem);">
+      <div class="flex-1 overflow-y-auto space-y-4 pb-4" x-ref="messageList">
+        <template x-if="messages.length === 0">
+          <div class="flex flex-col items-center justify-center h-full text-center px-4">
+            <div class="w-12 h-12 bg-brand-50 rounded-full flex items-center justify-center mb-4">
+              <svg class="w-6 h-6 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <p class="text-slate-700 font-semibold text-sm mb-1">Ask anything about this video</p>
+            <p class="text-slate-400 text-xs mb-4">Get answers grounded in the transcript with timestamp references</p>
+            <div class="flex flex-wrap gap-2 justify-center">
+              <template x-for="q in suggestedQuestions" :key="q">
+                <button @click="question = q; sendQuestion()"
+                        class="text-xs px-3 py-1.5 rounded-full border border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-700 transition-colors"
+                        x-text="q"></button>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <template x-for="(msg, i) in messages" :key="i">
+          <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+            <div class="max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed"
+                 :class="msg.role === 'user'
+                   ? 'bg-brand-600 text-white rounded-br-sm'
+                   : 'bg-slate-100 text-slate-800 rounded-bl-sm'">
+              <div class="vs-qa-msg-body vs-qa-md break-words prose prose-sm max-w-none"
+                   :class="msg.role === 'user' ? 'prose-invert' : ''"
+                   x-html="qaMessageHtml(msg)"></div>
+              <template x-if="msg.citations && msg.citations.length">
+                <div class="flex flex-wrap gap-1.5 mt-2 pt-2"
+                     :class="msg.role === 'user' ? 'border-t border-brand-500/30' : 'border-t border-slate-200'">
+                  <template x-for="(cit, j) in msg.citations" :key="j">
+                    <button @click="window.seekVideo(cit.start_time_sec)"
+                            class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md transition-colors cursor-pointer"
+                            :class="msg.role === 'user'
+                              ? 'bg-brand-500/30 text-white hover:bg-brand-500/50'
+                              : 'bg-brand-50 text-brand-700 hover:bg-brand-100'">
+                      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      </svg>
+                      <span x-text="cit.display"></span>
+                    </button>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="loading">
+          <div class="flex justify-start">
+            <div class="bg-slate-100 rounded-xl rounded-bl-sm px-4 py-3">
+              <div class="flex gap-1.5">
+                <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="border-t border-slate-200 pt-3">
+        <form @submit.prevent="sendQuestion()" class="flex gap-2">
+          <input type="text" x-model="question" placeholder="Ask about the video..."
+                 :disabled="loading"
+                 class="flex-1 text-sm px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:opacity-50" />
+          <button type="submit" :disabled="loading || !question.trim()"
+                  class="px-4 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-700 disabled:bg-brand-300 disabled:cursor-not-allowed transition-colors">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+          </button>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-16 text-center">
+      <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+        <svg class="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+      </div>
+      <p class="text-slate-500 font-medium">Q&A not available</p>
+      <p class="text-slate-400 text-sm mt-1">{% if is_partial %}Embedding generation may not have completed. Try regenerating.{% else %}Transcript embeddings were not created for this video.{% endif %}</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div><!-- /top-level view tabs wrapper -->
+
+<script>window.__vsProcessingComplete = true;</script>

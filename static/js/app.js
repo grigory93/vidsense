@@ -259,3 +259,350 @@
   });
 
 })();
+
+// ------------------------------------------------------------------
+// V2 Alpine components (global scope — must be defined before Alpine
+// processes HTMX-swapped content)
+// ------------------------------------------------------------------
+
+function vsGlossary() {
+  return {
+    terms: [],
+    search: '',
+    categories: [],
+    activeCategories: [],
+    init() {
+      var el = document.getElementById('vs-glossary-data');
+      if (el) {
+        try { this.terms = JSON.parse(el.textContent); } catch (e) { /* ignore */ }
+      }
+      var cats = [];
+      var seen = {};
+      for (var i = 0; i < this.terms.length; i++) {
+        var c = this.terms[i].category;
+        if (c && !seen[c]) { seen[c] = true; cats.push(c); }
+      }
+      this.categories = cats.sort();
+    },
+    toggleCategory(cat) {
+      var idx = this.activeCategories.indexOf(cat);
+      if (idx >= 0) this.activeCategories.splice(idx, 1);
+      else this.activeCategories.push(cat);
+    },
+    filtered() {
+      var result = this.terms;
+      if (this.search.trim()) {
+        var q = this.search.toLowerCase();
+        result = result.filter(function (t) {
+          return t.term.toLowerCase().indexOf(q) !== -1 ||
+                 t.definition.toLowerCase().indexOf(q) !== -1;
+        });
+      }
+      if (this.activeCategories.length) {
+        var ac = this.activeCategories;
+        result = result.filter(function (t) { return ac.indexOf(t.category) !== -1; });
+      }
+      return result;
+    }
+  };
+}
+
+/** Escape user Q&A text for safe display (line breaks preserved). */
+function vsQaEscapeUserText(text) {
+  if (!text) return '';
+  var div = document.createElement('div');
+  div.textContent = String(text);
+  return div.innerHTML.replace(/\n/g, '<br>');
+}
+
+/** Markdown → sanitized HTML for assistant answers. */
+function vsQaMarkdownToHtml(md) {
+  if (!md) return '';
+  if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+    return vsQaEscapeUserText(md);
+  }
+  try {
+    var raw = marked.parse(String(md), { breaks: true, gfm: true });
+  } catch (e) {
+    return vsQaEscapeUserText(md);
+  }
+  var clean = DOMPurify.sanitize(raw, {
+    ALLOWED_TAGS: [
+      'p', 'br', 'strong', 'em', 'b', 'i', 'del', 's', 'ul', 'ol', 'li',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'code', 'pre', 'blockquote',
+      'a', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'span'
+    ],
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
+  });
+  var tmp = document.createElement('div');
+  tmp.innerHTML = clean;
+  var links = tmp.querySelectorAll('a[href]');
+  for (var i = 0; i < links.length; i++) {
+    links[i].setAttribute('target', '_blank');
+    links[i].setAttribute('rel', 'noopener noreferrer');
+  }
+  return tmp.innerHTML;
+}
+
+function vsQA(videoId) {
+  return {
+    videoId: videoId,
+    question: '',
+    messages: [],
+    loading: false,
+    conversationId: null,
+    suggestedQuestions: [
+      'What are the main topics covered?',
+      'Summarize the key arguments',
+      'What conclusions are drawn?'
+    ],
+    qaMessageHtml(msg) {
+      if (!msg) return '';
+      if (msg.role === 'user') return vsQaEscapeUserText(msg.content);
+      return vsQaMarkdownToHtml(msg.content);
+    },
+    async sendQuestion() {
+      var q = this.question.trim();
+      if (!q || this.loading) return;
+      this.messages.push({ role: 'user', content: q, citations: [] });
+      this.question = '';
+      this.loading = true;
+      this.$nextTick(() => {
+        if (this.$refs.messageList) this.$refs.messageList.scrollTop = this.$refs.messageList.scrollHeight;
+      });
+      try {
+        var resp = await fetch('/api/video/' + this.videoId + '/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q, conversation_id: this.conversationId })
+        });
+        var data = await resp.json();
+        if (resp.ok) {
+          this.conversationId = data.conversation_id;
+          this.messages.push({ role: 'assistant', content: data.answer, citations: data.citations || [] });
+        } else {
+          this.messages.push({ role: 'assistant', content: (data.detail && data.detail.message) || 'Sorry, something went wrong.', citations: [] });
+        }
+      } catch (e) {
+        this.messages.push({ role: 'assistant', content: 'Network error. Please try again.', citations: [] });
+      } finally {
+        this.loading = false;
+        this.$nextTick(() => {
+          if (this.$refs.messageList) this.$refs.messageList.scrollTop = this.$refs.messageList.scrollHeight;
+        });
+      }
+    }
+  };
+}
+
+function vsMindMap() {
+  return {
+    cy: null,
+    searchQuery: '',
+    searchResults: [],
+    showDropdown: false,
+    init() {
+      window.__vsMindMapRender = () => this._renderMindMap();
+      this.$nextTick(() => {
+        requestAnimationFrame(() => {
+          if (window.__vsActiveView === 'mind_map') this._renderMindMap();
+        });
+      });
+    },
+    onSearch() {
+      var q = this.searchQuery.trim().toLowerCase();
+      if (!q) {
+        this.clearSearch();
+        return;
+      }
+      if (!this.cy) return;
+      var matches = this.cy.nodes().filter(function (n) {
+        return n.data('label').toLowerCase().includes(q)
+            || n.data('description').toLowerCase().includes(q);
+      });
+      this.cy.nodes().not(matches).style('opacity', 0.12);
+      this.cy.edges().style('opacity', 0.12);
+      matches.style('opacity', 1);
+      this.searchResults = matches.map(function (n) {
+        return { id: n.id(), label: n.data('label'), type: n.data('type') };
+      });
+      this.showDropdown = this.searchResults.length > 0;
+      if (matches.length === 1) {
+        this.cy.animate({ fit: { eles: matches, padding: 100 }, duration: 300 });
+      } else if (matches.length > 1) {
+        this.cy.animate({ fit: { eles: matches, padding: 48 }, duration: 300 });
+      }
+    },
+    clearSearch() {
+      this.searchQuery = '';
+      this.searchResults = [];
+      this.showDropdown = false;
+      if (this.cy) {
+        this.cy.nodes().style('opacity', 1);
+        this.cy.edges().style('opacity', 1);
+      }
+    },
+    selectFirstResult() {
+      if (this.searchResults.length > 0) this.selectNode(this.searchResults[0].id);
+    },
+    selectNode(nodeId) {
+      if (!this.cy) return;
+      var node = this.cy.getElementById(String(nodeId));
+      if (!node || !node.length) return;
+      this.showDropdown = false;
+      // Restore opacity, highlight just this node
+      this.cy.nodes().style('opacity', 0.12);
+      this.cy.edges().style('opacity', 0.12);
+      node.style('opacity', 1);
+      // Also light up its direct edges + neighbours
+      node.connectedEdges().style('opacity', 0.6);
+      node.neighbourhood('node').style('opacity', 0.5);
+      this.cy.animate({ fit: { eles: node, padding: 100 }, duration: 300 });
+      // Trigger the detail panel using the same logic as the tap handler
+      this._showNodeDetail(node.data());
+    },
+    _renderMindMap() {
+      var self = this;
+      var maxAttempts = 40;
+      var tick = function (attempt) {
+        if (typeof cytoscape === 'undefined') {
+          if (attempt < maxAttempts) setTimeout(function () { tick(attempt + 1); }, 50);
+          return;
+        }
+        var container = document.getElementById('vs-mind-map-container');
+        var dataEl = document.getElementById('vs-mind-map-data');
+        if (!container || !dataEl) return;
+        if (container.clientWidth < 20 || container.clientHeight < 20) {
+          if (attempt < maxAttempts) setTimeout(function () { tick(attempt + 1); }, 50);
+          return;
+        }
+        var data;
+        try { data = JSON.parse(dataEl.textContent); } catch (e) { return; }
+
+        var typeColors = {
+          concept: '#2563eb', person: '#16a34a', technology: '#9333ea',
+          event: '#ea580c', theory: '#0891b2', methodology: '#d946ef'
+        };
+
+        var elements = [];
+        (data.nodes || []).forEach(function (n) {
+          var id = n.node_id || n.id;
+          if (!id) return;
+          elements.push({
+            data: {
+              id: String(id),
+              label: n.label || id,
+              type: n.type || 'concept',
+              description: n.description || '',
+              chapter_ids: n.chapter_ids || [],
+              color: typeColors[n.type] || '#64748b'
+            }
+          });
+        });
+        (data.edges || []).forEach(function (e) {
+          elements.push({
+            data: {
+              source: String(e.source),
+              target: String(e.target),
+              label: e.relationship || ''
+            }
+          });
+        });
+
+        if (!elements.length) return;
+
+        if (self.cy) {
+          self.cy.resize();
+          self.cy.fit(undefined, 48);
+          return;
+        }
+
+        self.cy = cytoscape({
+          container: container,
+          elements: elements,
+          style: [
+            { selector: 'node', style: {
+              'label': 'data(label)', 'background-color': 'data(color)',
+              'color': '#334155', 'font-size': '11px', 'text-valign': 'bottom',
+              'text-margin-y': 6, 'width': 32, 'height': 32,
+              'border-width': 2, 'border-color': '#e2e8f0',
+              'cursor': 'pointer'
+            }},
+            { selector: 'edge', style: {
+              'label': 'data(label)', 'font-size': '9px', 'color': '#94a3b8',
+              'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1',
+              'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
+              'width': 1.5
+            }},
+            { selector: 'node:selected', style: {
+              'border-color': '#2563eb', 'border-width': 3
+            }}
+          ],
+          layout: { name: 'cose', animate: true, animationDuration: 500, nodeRepulsion: 8000 }
+        });
+        self.cy.fit(undefined, 48);
+
+        // Build chapter lookup: chapter_id → {title, start_time_sec, start_display}
+        var chapterIndex = {};
+        try {
+          var chIndexEl = document.getElementById('vs-chapters-index');
+          if (chIndexEl) {
+            (JSON.parse(chIndexEl.textContent) || []).forEach(function (ch) {
+              if (ch.chapter_id) chapterIndex[ch.chapter_id] = ch;
+            });
+          }
+        } catch (e) {}
+
+        self._showNodeDetail = function (d) {
+          var detail = document.getElementById('vs-mind-map-detail');
+          document.getElementById('vs-mm-detail-label').textContent = d.label || '';
+          document.getElementById('vs-mm-detail-type').textContent = d.type || '';
+          document.getElementById('vs-mm-detail-desc').textContent = d.description || '';
+
+          var chipsEl = document.getElementById('vs-mm-detail-chapters');
+          chipsEl.innerHTML = '';
+          var ids = d.chapter_ids || [];
+          if (ids.length) {
+            var heading = document.createElement('span');
+            heading.className = 'w-full text-xs text-slate-400 mb-1';
+            heading.textContent = 'Appears in:';
+            chipsEl.appendChild(heading);
+            ids.forEach(function (cid) {
+              var ch = chapterIndex[cid];
+              var btn = document.createElement('button');
+              btn.className = 'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 transition-colors';
+              if (ch) {
+                btn.textContent = ch.start_display + ' ' + ch.title;
+                btn.onclick = function () {
+                  if (window.__vsSetActiveView) window.__vsSetActiveView('read');
+                  if (window.seekVideo) window.seekVideo(ch.start_time_sec);
+                };
+              } else {
+                btn.textContent = cid;
+                btn.disabled = true;
+              }
+              chipsEl.appendChild(btn);
+            });
+          }
+          detail.classList.remove('hidden');
+        };
+
+        self.cy.on('tap', 'node', function (evt) {
+          self._showNodeDetail(evt.target.data());
+        });
+
+        self.cy.on('tap', function (evt) {
+          if (evt.target === self.cy) {
+            document.getElementById('vs-mind-map-detail').classList.add('hidden');
+            // Restore full opacity only if search is empty
+            if (!self.searchQuery) {
+              self.cy.nodes().style('opacity', 1);
+              self.cy.edges().style('opacity', 1);
+            }
+          }
+        });
+      };
+      tick(0);
+    }
+  };
+}

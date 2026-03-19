@@ -2,19 +2,29 @@
 LangGraph StateGraph definition for VidSense processing pipeline.
 
 Graph topology:
-  START → validate_input → [gen_summaries, extract_chapters] (parallel fan-out)
-        → persist_results → END
+  START → validate_input → gen_summaries                          → finalize_run → END
+                         → extract_chapters → extract_mind_map   → finalize_run
+                         → extract_glossary                       → finalize_run
+                         → embed_transcript                       → finalize_run
+
+  extract_mind_map is sequenced after extract_chapters so that chapters_result
+  is available in state for chapter cross-reference enrichment in the prompt.
+
+Each parallel node constructs its own LLM via get_llm(task=...) so
+different tasks can use different models without sharing state.
 """
 from __future__ import annotations
 
 import logging
 
-from langchain_core.language_models import BaseChatModel
 from langgraph.graph import END, START, StateGraph
 
 from app.models.db import AnalysisRun, TranscriptSource
 from app.services.llm.nodes import (
+    embed_transcript_node,
     extract_chapters_node,
+    extract_glossary_node,
+    extract_mind_map_node,
     finalize_run_node,
     gen_summaries_node,
     validate_input_node,
@@ -30,17 +40,31 @@ def _build_graph() -> StateGraph:
     graph.add_node("validate_input", validate_input_node)
     graph.add_node("gen_summaries", gen_summaries_node)
     graph.add_node("extract_chapters", extract_chapters_node)
+    graph.add_node("extract_mind_map", extract_mind_map_node)
+    graph.add_node("extract_glossary", extract_glossary_node)
+    graph.add_node("embed_transcript", embed_transcript_node)
     graph.add_node("finalize_run", finalize_run_node)
 
     graph.add_edge(START, "validate_input")
 
-    # Fan-out: both summaries and chapters run after validation
+    # Fan-out: summaries, glossary, and embedding run fully in parallel after validation.
+    # extract_mind_map depends on extract_chapters so that chapters_result is in state
+    # when the mind map node reads it for chapter cross-reference enrichment.
     graph.add_edge("validate_input", "gen_summaries")
     graph.add_edge("validate_input", "extract_chapters")
+    graph.add_edge("validate_input", "extract_glossary")
+    graph.add_edge("validate_input", "embed_transcript")
 
-    # Both fan-in to finalize
+    graph.add_edge("extract_chapters", "extract_mind_map")
+
+    # All fan-in to finalize.
+    # extract_chapters does NOT have a direct edge here — it routes through
+    # extract_mind_map so that chapters_result is populated in state before
+    # the mind map node reads it for chapter cross-reference enrichment.
     graph.add_edge("gen_summaries", "finalize_run")
-    graph.add_edge("extract_chapters", "finalize_run")
+    graph.add_edge("extract_mind_map", "finalize_run")
+    graph.add_edge("extract_glossary", "finalize_run")
+    graph.add_edge("embed_transcript", "finalize_run")
 
     graph.add_edge("finalize_run", END)
 
@@ -51,7 +75,6 @@ _compiled_graph = _build_graph().compile()
 
 
 async def run_pipeline(
-    llm: BaseChatModel,
     session_factory,
     run: AnalysisRun,
     transcript_source: TranscriptSource,
@@ -63,9 +86,11 @@ async def run_pipeline(
 
     session_factory must be an async_sessionmaker — each parallel node opens its own
     independent session to avoid concurrent-commit errors on a shared session.
+
+    Each node constructs its own LLM via get_llm(task=...) so per-task model
+    overrides are respected without passing a shared LLM through state.
     """
     initial_state: GraphState = {
-        "llm": llm,
         "session_factory": session_factory,
         "run_id": run.id,
         "run": run,
@@ -77,6 +102,11 @@ async def run_pipeline(
         "summary_error": None,
         "chapters_result": None,
         "chapters_error": None,
+        "mind_map_result": None,
+        "mind_map_error": None,
+        "glossary_result": None,
+        "glossary_error": None,
+        "embedding_error": None,
     }
 
     try:

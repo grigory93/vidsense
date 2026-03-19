@@ -23,16 +23,32 @@ from app.models.db import (
     AnalysisRun,
     AnalysisRunStatus,
     Chapter,
+    GlossaryTerm,
+    MindMap,
     Summary,
     SummaryLevel,
 )
-from app.models.schemas import ChapterListSchema, SummarySchema
+from app.models.schemas import (
+    ChapterListSchema,
+    GlossaryListSchema,
+    MindMapSchema,
+    SummarySchema,
+)
 from app.services.llm.prompts import (
     build_chapter_messages,
     build_chapter_messages_chunk,
+    build_glossary_messages,
+    build_mind_map_messages,
     build_summary_messages,
     chunk_segments,
     format_transcript_with_timestamps,
+)
+from app.services.llm.providers import (
+    TASK_CHAPTERS,
+    TASK_GLOSSARY,
+    TASK_MIND_MAP,
+    TASK_SUMMARIES,
+    get_llm,
 )
 from app.services.llm.state import GraphState
 
@@ -89,15 +105,19 @@ async def _invoke_with_structured_output(
 
 
 async def _set_step(state: GraphState, step: str) -> None:
-    """Persist current_step to DB using a fresh session (safe for parallel nodes)."""
+    """Persist current_step to DB. Non-critical — swallows errors to avoid
+    crashing a pipeline node over a progress indicator update."""
     session_factory = state["session_factory"]
     run_id: int = state["run_id"]
-    async with session_factory() as sess:
-        result = await sess.execute(select(AnalysisRun).where(AnalysisRun.id == run_id))
-        db_run = result.scalar_one_or_none()
-        if db_run:
-            db_run.current_step = step
-            await sess.commit()
+    try:
+        async with session_factory() as sess:
+            result = await sess.execute(select(AnalysisRun).where(AnalysisRun.id == run_id))
+            db_run = result.scalar_one_or_none()
+            if db_run:
+                db_run.current_step = step
+                await sess.commit()
+    except Exception as exc:
+        logger.debug("[run=%d] _set_step(%r) failed (non-critical): %s", run_id, step, exc)
 
 
 async def validate_input_node(state: GraphState) -> dict:
@@ -130,7 +150,7 @@ async def gen_summaries_node(state: GraphState) -> dict:
 
     run_id: int = state["run_id"]
     session_factory = state["session_factory"]
-    llm: BaseChatModel = state["llm"]
+    llm = get_llm(task=TASK_SUMMARIES)
     transcript_source = state["transcript_source"]
     focus_prompt = state.get("focus_prompt")
 
@@ -187,7 +207,7 @@ async def extract_chapters_node(state: GraphState) -> dict:
 
     run_id: int = state["run_id"]
     session_factory = state["session_factory"]
-    llm: BaseChatModel = state["llm"]
+    llm = get_llm(task=TASK_CHAPTERS)
     transcript_source = state["transcript_source"]
     focus_prompt = state.get("focus_prompt")
 
@@ -312,6 +332,354 @@ async def extract_chapters_node(state: GraphState) -> dict:
     return {"chapters_result": merged, "chapters_error": None}
 
 
+async def extract_mind_map_node(state: GraphState) -> dict:
+    """Extract a concept mind map from the transcript and persist to DB."""
+    if state.get("pipeline_failed"):
+        return {}
+
+    run_id: int = state["run_id"]
+    session_factory = state["session_factory"]
+    llm = get_llm(task=TASK_MIND_MAP)
+    transcript_source = state["transcript_source"]
+    focus_prompt = state.get("focus_prompt")
+
+    logger.info("[run=%d] extract_mind_map: starting", run_id)
+    await _set_step(state, "extracting_mind_map")
+
+    chapter_ids_titles: list[tuple[str, str]] | None = None
+    chapters_result = state.get("chapters_result")
+    if chapters_result and hasattr(chapters_result, "chapters"):
+        chapter_ids_titles = [(c.chapter_id, c.title) for c in chapters_result.chapters]
+
+    messages = build_mind_map_messages(
+        transcript_source.raw_text, chapter_ids_titles, focus_prompt
+    )
+
+    result, error = await _invoke_with_structured_output(
+        llm, MindMapSchema, messages, settings.llm_max_retries
+    )
+
+    if result is None:
+        logger.error("[run=%d] extract_mind_map: FAILED — %s", run_id, error)
+        return {
+            "mind_map_result": None,
+            "mind_map_error": error or "Mind map extraction failed.",
+            "errors": state.get("errors", []) + [f"Mind map extraction failed: {error}"],
+        }
+
+    async with session_factory() as sess:
+        mm = MindMap(
+            run_id=run_id,
+            nodes_json=json.dumps([n.model_dump() for n in result.nodes]),
+            edges_json=json.dumps([e.model_dump() for e in result.edges]),
+        )
+        sess.add(mm)
+        await sess.commit()
+
+    logger.info(
+        "[run=%d] extract_mind_map: done — %d nodes, %d edges",
+        run_id, len(result.nodes), len(result.edges),
+    )
+    return {"mind_map_result": result, "mind_map_error": None}
+
+
+async def extract_glossary_node(state: GraphState) -> dict:
+    """Extract domain-specific glossary terms and map them to transcript timestamps."""
+    if state.get("pipeline_failed"):
+        return {}
+
+    run_id: int = state["run_id"]
+    session_factory = state["session_factory"]
+    llm = get_llm(task=TASK_GLOSSARY)
+    transcript_source = state["transcript_source"]
+    focus_prompt = state.get("focus_prompt")
+
+    logger.info("[run=%d] extract_glossary: starting", run_id)
+    await _set_step(state, "extracting_glossary")
+
+    messages = build_glossary_messages(transcript_source.raw_text, focus_prompt)
+
+    result, error = await _invoke_with_structured_output(
+        llm, GlossaryListSchema, messages, settings.llm_max_retries
+    )
+
+    if result is None:
+        logger.error("[run=%d] extract_glossary: FAILED — %s", run_id, error)
+        return {
+            "glossary_result": None,
+            "glossary_error": error or "Glossary extraction failed.",
+            "errors": state.get("errors", []) + [f"Glossary extraction failed: {error}"],
+        }
+
+    segments: list[dict] = []
+    if transcript_source.segments_json:
+        try:
+            segments = json.loads(transcript_source.segments_json)
+        except (json.JSONDecodeError, TypeError):
+            segments = []
+
+    async with session_factory() as sess:
+        for idx, term_schema in enumerate(result.terms):
+            occurrences = _find_term_occurrences(term_schema.term, segments)
+            gt = GlossaryTerm(
+                run_id=run_id,
+                term=term_schema.term,
+                definition=term_schema.definition,
+                category=term_schema.category,
+                related_terms_json=json.dumps(term_schema.related_terms) if term_schema.related_terms else None,
+                occurrences_json=json.dumps(occurrences),
+                sort_order=idx,
+            )
+            sess.add(gt)
+        await sess.commit()
+
+    logger.info("[run=%d] extract_glossary: done — %d terms", run_id, len(result.terms))
+    return {"glossary_result": result, "glossary_error": None}
+
+
+def _find_term_occurrences(
+    term: str, segments: list[dict], max_occurrences: int = 5
+) -> list[dict]:
+    """Find timestamps where a term appears in the transcript segments.
+
+    Uses a three-tier matching strategy to handle common mismatches:
+    1. Exact substring match within a single segment
+    2. Sliding-window match across consecutive segments (multi-word terms
+       often span YouTube's short caption segments)
+    3. Stem-based match — strips common English suffixes so "algorithm"
+       matches "algorithms", "optimizing" matches "optimization", etc.
+    """
+    import re
+
+    if not segments:
+        return []
+
+    term_lower = term.lower().strip()
+    if not term_lower:
+        return []
+
+    occurrences: list[dict] = []
+    seen_timestamps: set[int] = set()
+
+    def _add_hit(ts_raw: float | int) -> bool:
+        ts = int(ts_raw)
+        if ts in seen_timestamps:
+            return False
+        seen_timestamps.add(ts)
+        m, s = divmod(ts, 60)
+        h, m = divmod(m, 60)
+        display = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+        occurrences.append({"timestamp_sec": ts, "display": display})
+        return len(occurrences) >= max_occurrences
+
+    # --- Tier 1: exact substring match in a single segment ---
+    for seg in segments:
+        text = seg.get("text", "").lower()
+        if term_lower in text:
+            if _add_hit(seg.get("start", 0)):
+                return occurrences
+
+    # --- Tier 2: sliding window across consecutive segments ---
+    # Multi-word terms like "neural network architecture" may span 2-3 segments.
+    if len(term_lower.split()) > 1:
+        window_size = min(len(term_lower.split()), 4)
+        for i in range(len(segments) - window_size + 1):
+            window_text = " ".join(
+                segments[i + j].get("text", "") for j in range(window_size)
+            ).lower()
+            if term_lower in window_text:
+                if _add_hit(segments[i].get("start", 0)):
+                    return occurrences
+
+    if occurrences:
+        occurrences.sort(key=lambda o: o["timestamp_sec"])
+        return occurrences
+
+    # --- Tier 3: stem-based matching ---
+    # Strip common English suffixes so morphological variants match.
+    def _crude_stem(word: str) -> str:
+        for suffix in ("ation", "izing", "ised", "ized", "ting", "ning",
+                        "sion", "ment", "ness", "ally", "ious", "ical",
+                        "ies", "ing", "ion", "ous", "ive", "ble",
+                        "ers", "est", "ful", "ity", "ual",
+                        "ly", "ed", "er", "al", "es", "s"):
+            if len(word) > len(suffix) + 2 and word.endswith(suffix):
+                return word[: -len(suffix)]
+        return word
+
+    term_words = [w for w in re.split(r"[\s\-/]+", term_lower) if len(w) > 2]
+    if not term_words:
+        return occurrences
+
+    term_stems = {_crude_stem(w) for w in term_words}
+
+    for seg in segments:
+        seg_words = re.split(r"[\s\-/]+", seg.get("text", "").lower())
+        seg_stems = {_crude_stem(w) for w in seg_words if len(w) > 2}
+        if term_stems.issubset(seg_stems):
+            if _add_hit(seg.get("start", 0)):
+                return occurrences
+
+    # Sliding window for stem matching on multi-word terms
+    if len(term_words) > 1:
+        window_size = min(len(term_words), 4)
+        for i in range(len(segments) - window_size + 1):
+            combined_words = []
+            for j in range(window_size):
+                combined_words.extend(
+                    re.split(r"[\s\-/]+", segments[i + j].get("text", "").lower())
+                )
+            combined_stems = {_crude_stem(w) for w in combined_words if len(w) > 2}
+            if term_stems.issubset(combined_stems):
+                if _add_hit(segments[i].get("start", 0)):
+                    return occurrences
+
+    occurrences.sort(key=lambda o: o["timestamp_sec"])
+    return occurrences
+
+
+async def embed_transcript_node(state: GraphState) -> dict:
+    """Chunk the transcript and build a FAISS index for Q&A retrieval."""
+    if state.get("pipeline_failed"):
+        return {}
+
+    run_id: int = state["run_id"]
+    video_id: int | None = None
+    run_obj = state.get("run")
+    if run_obj:
+        video_id = run_obj.video_id
+    if video_id is None:
+        # Resolve from DB so we never save to data/embeddings/None (Q&A looks up by real video_id).
+        session_factory = state["session_factory"]
+        async with session_factory() as sess:
+            result = await sess.execute(select(AnalysisRun).where(AnalysisRun.id == run_id))
+            run_from_db = result.scalar_one_or_none()
+            if run_from_db is not None:
+                video_id = run_from_db.video_id
+    if video_id is None:
+        msg = "Could not resolve video_id for this run."
+        return {
+            "embedding_error": msg,
+            "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+        }
+
+    logger.info("[run=%d] embed_transcript: starting", run_id)
+    await _set_step(state, "embedding_transcript")
+
+    transcript_source = state["transcript_source"]
+    segments: list[dict] = []
+    if transcript_source.segments_json:
+        try:
+            segments = json.loads(transcript_source.segments_json)
+        except (json.JSONDecodeError, TypeError):
+            segments = []
+
+    has_usable_segments = bool(segments) and any(
+        (seg.get("text") or "").strip() for seg in segments
+    )
+    has_raw = bool((transcript_source.raw_text or "").strip())
+    if not has_usable_segments and not has_raw:
+        msg = "No transcript available for embedding."
+        return {
+            "embedding_error": msg,
+            "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+        }
+
+    try:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_community.vectorstores import FAISS
+
+        from app.services.llm.providers import get_embedding_model
+
+        embedding_model = get_embedding_model()
+
+        if has_usable_segments:
+            texts = []
+            metadatas = []
+            for seg in segments:
+                text = seg.get("text", "").strip()
+                if text:
+                    ts = int(seg.get("start", 0))
+                    dur = float(seg.get("duration", 0))
+                    texts.append(text)
+                    metadatas.append({"start_time_sec": ts, "duration": dur})
+
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000, chunk_overlap=200, separators=["\n\n", "\n", ". ", " "]
+            )
+
+            # Greedily merge consecutive segments into ~800-char blocks so that
+            # each block fits comfortably within chunk_size (1000) without the
+            # splitter needing to sub-split it.  Every block records the timestamp
+            # of its *first* segment — that is the correct seek target for the
+            # viewer regardless of how many sub-splits the block produces.
+            blocks: list[tuple[str, int]] = []  # (merged_text, start_time_sec)
+            current_parts: list[str] = []
+            current_start: int = 0
+            current_len: int = 0
+            for text, meta in zip(texts, metadatas):
+                ts = int(meta["start_time_sec"])
+                if not current_parts:
+                    current_start = ts
+                if current_parts and current_len + len(text) + 1 > 800:
+                    blocks.append((" ".join(current_parts), current_start))
+                    current_parts = [text]
+                    current_start = ts
+                    current_len = len(text)
+                else:
+                    current_parts.append(text)
+                    # +1 for the joining space, but only between items (not before the first)
+                    current_len += len(text) + (1 if len(current_parts) > 1 else 0)
+            if current_parts:
+                blocks.append((" ".join(current_parts), current_start))
+
+            # Sub-split any block that still exceeds chunk_size (rare: only when a
+            # single segment is very long).  All sub-splits inherit the block's
+            # start timestamp — sub-split precision below the block level is not
+            # meaningful for citation purposes.
+            final_texts = []
+            final_metas = []
+            for block_text, block_start in blocks:
+                for chunk in splitter.split_text(block_text):
+                    final_texts.append(chunk)
+                    final_metas.append({"start_time_sec": block_start})
+        else:
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000, chunk_overlap=200
+            )
+            splits = splitter.split_text(transcript_source.raw_text.strip())
+            final_texts = splits
+            final_metas = [{"start_time_sec": 0}] * len(splits)
+
+        if not final_texts:
+            msg = "No transcript text to embed after processing segments."
+            return {
+                "embedding_error": msg,
+                "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+            }
+
+        store = FAISS.from_texts(final_texts, embedding_model, metadatas=final_metas)
+
+        import os
+        from app.config import settings as app_settings
+        os.makedirs(app_settings.embeddings_dir, exist_ok=True)
+        save_path = os.path.join(app_settings.embeddings_dir, str(video_id))
+        store.save_local(save_path)
+
+        logger.info(
+            "[run=%d] embed_transcript: done — %d chunks, saved to %s",
+            run_id, len(final_texts), save_path,
+        )
+        return {"embedding_error": None}
+
+    except Exception as exc:
+        logger.error("[run=%d] embed_transcript: FAILED — %s", run_id, exc)
+        return {
+            "embedding_error": str(exc),
+            "errors": state.get("errors", []) + [f"Embedding failed: {exc}"],
+        }
+
+
 async def finalize_run_node(state: GraphState) -> dict:
     """Set final run status and completion timestamp based on what was persisted."""
     run_id: int = state["run_id"]
@@ -356,16 +724,35 @@ async def finalize_run_node(state: GraphState) -> dict:
             final_status = AnalysisRunStatus.failed
             run.error_message = "; ".join(state.get("errors", ["All pipeline stages failed."]))
 
+        # V2 feature errors are logged but don't downgrade core status
+        mind_map_error = state.get("mind_map_error")
+        glossary_error = state.get("glossary_error")
+        embedding_error = state.get("embedding_error")
+        v2_warnings = []
+        if mind_map_error:
+            v2_warnings.append(f"Mind map: {mind_map_error}")
+        if glossary_error:
+            v2_warnings.append(f"Glossary: {glossary_error}")
+        if embedding_error:
+            v2_warnings.append(f"Embeddings: {embedding_error}")
+        if v2_warnings:
+            existing = run.error_message or ""
+            v2_msg = "; ".join(v2_warnings)
+            run.error_message = f"{existing}; {v2_msg}".strip("; ") if existing else v2_msg
+
         run.status = final_status
         run.current_step = None
         run.completed_at = datetime.now(timezone.utc)
         await sess.commit()
 
     logger.info(
-        "[run=%d] finalize_run: done — final_status=%s summaries=%s chapters=%s",
+        "[run=%d] finalize_run: done — final_status=%s summaries=%s chapters=%s mind_map=%s glossary=%s embeddings=%s",
         run_id, final_status,
         "ok" if summary_result else f"error({summary_error})",
         "ok" if chapters_result else f"error({chapters_error})",
+        "ok" if state.get("mind_map_result") else f"error({state.get('mind_map_error')})",
+        "ok" if state.get("glossary_result") else f"error({state.get('glossary_error')})",
+        "ok" if not state.get("embedding_error") else f"error({state.get('embedding_error')})",
     )
     return {"final_status": final_status}
 

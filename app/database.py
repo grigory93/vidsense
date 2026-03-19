@@ -1,6 +1,7 @@
 import logging
+import os
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -11,8 +12,19 @@ logger = logging.getLogger(__name__)
 engine = create_async_engine(
     settings.database_url,
     echo=settings.app_debug,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_size=1,
+    max_overflow=4,
 )
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragmas(dbapi_conn, connection_record):
+    """Enable WAL mode and busy timeout on every SQLite connection."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
@@ -44,9 +56,21 @@ async def _add_missing_columns(conn) -> None:
             pass  # column already exists
 
 
+def _ensure_database_dir() -> None:
+    """Create parent directory of the database file so SQLite can create the file."""
+    url = settings.database_url
+    if "sqlite" in url and "///" in url:
+        path = url.split("///", 1)[-1].split("?")[0].lstrip("./")
+        if path and path != ":memory:":
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+
+
 async def init_db() -> None:
     from app.models import db  # noqa: F401 — ensure models are registered
 
+    _ensure_database_dir()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _add_missing_columns(conn)

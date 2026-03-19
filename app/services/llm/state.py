@@ -14,18 +14,24 @@ from typing_extensions import TypedDict
 
 class GraphState(TypedDict, total=False):
     # Inputs (typed as Any to avoid runtime annotation resolution issues with LangGraph)
-    llm: Any              # BaseChatModel
     session_factory: Any  # async_sessionmaker[AsyncSession] — each node creates its own session
     run_id: Any           # int — stable ID used to reload run in fresh sessions
     run: Any              # AnalysisRun (attached to the caller's session; nodes use run_id instead)
     transcript_source: Any  # TranscriptSource
     focus_prompt: Any  # str | None
 
-    # Intermediate results
+    # Intermediate results — summaries & chapters (V1)
     summary_result: Any    # SummarySchema | None
     summary_error: Any     # str | None
     chapters_result: Any   # ChapterListSchema | None
     chapters_error: Any    # str | None
+
+    # Intermediate results — V2 features
+    mind_map_result: Any   # MindMapSchema | None
+    mind_map_error: Any    # str | None
+    glossary_result: Any   # GlossaryListSchema | None
+    glossary_error: Any    # str | None
+    embedding_error: Any   # str | None
 
     # Control flow
     pipeline_failed: bool
