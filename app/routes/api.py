@@ -539,7 +539,7 @@ async def ask_question(
         logger.exception("Q&A error for video %d: %s", video_id, exc)
         raise HTTPException(
             status_code=500,
-            detail={"message": f"Failed to generate answer: {exc}"},
+            detail={"message": "A temporary service error occurred. Please try again."},
         )
 
 
