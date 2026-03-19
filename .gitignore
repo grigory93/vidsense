@@ -38,6 +38,7 @@ vidsense.db
 .vscode/
 *.swp
 *.swo
+skills-lock.json
 
 # OS
 .DS_Store
