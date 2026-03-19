@@ -12,12 +12,11 @@ import pytest
 from langchain_core.messages import AIMessage
 from sqlalchemy import select
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
 from sqlalchemy import StaticPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base, get_session
-from app.models.db import AnalysisRunStatus, QAMessage, Video
+from app.models.db import QAMessage, Video
 
 # ---------------------------------------------------------------------------
 # Test database setup
@@ -180,11 +179,19 @@ class TestAskEndpoint:
         resp = client.post("/api/video/1/ask", json={})
         assert resp.status_code == 422
 
-    def test_no_embeddings_returns_404(self, client):
-        """When embeddings dir does not exist for video, returns 404."""
-        with patch("os.path.exists", return_value=False):
+    async def test_no_embeddings_returns_404(self, client):
+        """When embeddings dir does not exist for video, returns 404 with embeddings message."""
+        uid = uuid.uuid4().hex[:10]
+        async with TestingSessionLocal() as session:
+            session.add(Video(youtube_id=f"ve{uid}", url="http://example.com/e"))
+            await session.commit()
+            v = (
+                await session.execute(select(Video).where(Video.youtube_id == f"ve{uid}"))
+            ).scalar_one()
+
+        with patch("app.routes.api.os.path.isdir", return_value=False):
             resp = client.post(
-                "/api/video/1/ask",
+                f"/api/video/{v.id}/ask",
                 json={"question": "What is this video about?"},
             )
         assert resp.status_code == 404
@@ -247,10 +254,10 @@ class TestAskEndpoint:
         mock_faiss.load_local = MagicMock(return_value=mock_store)
 
         with (
-            patch("os.path.exists", return_value=True),
+            patch("app.routes.api.os.path.isdir", return_value=True),
             patch("langchain_community.vectorstores.FAISS", mock_faiss),
-            patch("app.services.llm.providers.get_embedding_model", return_value=MagicMock()),
-            patch("app.services.llm.providers.get_llm", return_value=mock_llm),
+            patch("app.routes.api.get_embedding_model", return_value=MagicMock()),
+            patch("app.routes.api.get_llm", return_value=mock_llm),
         ):
             resp = client.post(
                 f"/api/video/{v2.id}/ask",
@@ -304,10 +311,10 @@ class TestAskEndpoint:
         mock_faiss.load_local = MagicMock(return_value=mock_store)
 
         with (
-            patch("os.path.exists", return_value=True),
+            patch("app.routes.api.os.path.isdir", return_value=True),
             patch("langchain_community.vectorstores.FAISS", mock_faiss),
-            patch("app.services.llm.providers.get_embedding_model", return_value=MagicMock()),
-            patch("app.services.llm.providers.get_llm", return_value=mock_llm),
+            patch("app.routes.api.get_embedding_model", return_value=MagicMock()),
+            patch("app.routes.api.get_llm", return_value=mock_llm),
         ):
             client.post(
                 f"/api/video/{v.id}/ask",
