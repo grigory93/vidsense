@@ -136,9 +136,7 @@ async def analyze(
             }
 
     # Create the run record so we can return run_id immediately
-    from app.models.db import AnalysisRun as Run
-
-    run = Run(
+    run = AnalysisRun(
         video_id=video.id,
         focus_prompt=body.focus_prompt,
         status=AnalysisRunStatus.pending,

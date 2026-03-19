@@ -72,9 +72,6 @@ async def init_db() -> None:
 
     _ensure_database_dir()
     async with engine.begin() as conn:
-        # WAL mode allows concurrent readers + one writer without "database is locked"
-        await conn.execute(text("PRAGMA journal_mode=WAL"))
-        await conn.execute(text("PRAGMA busy_timeout=5000"))
         await conn.run_sync(Base.metadata.create_all)
         await _add_missing_columns(conn)
 

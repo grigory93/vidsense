@@ -59,6 +59,9 @@ class Video(Base):
     analysis_runs: Mapped[list["AnalysisRun"]] = relationship(
         back_populates="video", cascade="all, delete-orphan"
     )
+    qa_messages: Mapped[list["QAMessage"]] = relationship(
+        back_populates="video", cascade="all, delete-orphan"
+    )
 
 
 class TranscriptSource(Base):
@@ -102,7 +105,7 @@ class AnalysisRun(Base):
         order_by="Chapter.sort_order",
     )
     mind_map: Mapped["MindMap | None"] = relationship(
-        back_populates="run", cascade="all, delete-orphan", uselist=False
+        back_populates="run", cascade="all, delete-orphan"
     )
     glossary_terms: Mapped[list["GlossaryTerm"]] = relationship(
         back_populates="run",
@@ -177,4 +180,4 @@ class QAMessage(Base):
     citations_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    video: Mapped["Video"] = relationship()
+    video: Mapped["Video"] = relationship(back_populates="qa_messages")
