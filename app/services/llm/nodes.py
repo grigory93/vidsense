@@ -574,7 +574,11 @@ async def embed_transcript_node(state: GraphState) -> dict:
         except (json.JSONDecodeError, TypeError):
             segments = []
 
-    if not segments and not transcript_source.raw_text.strip():
+    has_usable_segments = bool(segments) and any(
+        (seg.get("text") or "").strip() for seg in segments
+    )
+    has_raw = bool((transcript_source.raw_text or "").strip())
+    if not has_usable_segments and not has_raw:
         msg = "No transcript available for embedding."
         return {
             "embedding_error": msg,
@@ -589,7 +593,7 @@ async def embed_transcript_node(state: GraphState) -> dict:
 
         embedding_model = get_embedding_model()
 
-        if segments:
+        if has_usable_segments:
             texts = []
             metadatas = []
             for seg in segments:
@@ -663,9 +667,16 @@ async def embed_transcript_node(state: GraphState) -> dict:
             splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000, chunk_overlap=200
             )
-            splits = splitter.split_text(transcript_source.raw_text)
+            splits = splitter.split_text(transcript_source.raw_text.strip())
             final_texts = splits
             final_metas = [{"start_time_sec": 0}] * len(splits)
+
+        if not final_texts:
+            msg = "No transcript text to embed after processing segments."
+            return {
+                "embedding_error": msg,
+                "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+            }
 
         store = FAISS.from_texts(final_texts, embedding_model, metadatas=final_metas)
 
