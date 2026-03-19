@@ -325,3 +325,30 @@ class TestAskEndpoint:
         rq = mock_store.similarity_search.call_args[0][0]
         assert "QUANTUM_FOAM_ASSISTANT_MARKER" in rq
         assert "Tell me more." in rq
+
+    async def test_ask_internal_error_returns_generic_message(self, client):
+        """On unexpected exception, return 500 with generic message; do not leak exception details."""
+        uid = uuid.uuid4().hex[:10]
+        async with TestingSessionLocal() as session:
+            session.add(Video(youtube_id=f"ve{uid}", url="http://example.com/e"))
+            await session.commit()
+            v = (
+                await session.execute(select(Video).where(Video.youtube_id == f"ve{uid}"))
+            ).scalar_one()
+
+        with (
+            patch("app.routes.api.os.path.isdir", return_value=True),
+            patch(
+                "app.routes.api.get_embedding_model",
+                side_effect=RuntimeError("sensitive_internal_detail"),
+            ),
+        ):
+            resp = client.post(
+                f"/api/video/{v.id}/ask",
+                json={"question": "What is this about?"},
+            )
+
+        assert resp.status_code == 500
+        body = resp.text
+        assert "A temporary service error occurred. Please try again." in body
+        assert "sensitive_internal_detail" not in body
