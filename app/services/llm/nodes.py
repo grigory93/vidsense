@@ -628,7 +628,8 @@ async def embed_transcript_node(state: GraphState) -> dict:
                     current_len = len(text)
                 else:
                     current_parts.append(text)
-                    current_len += len(text) + 1
+                    # +1 for the joining space, but only between items (not before the first)
+                    current_len += len(text) + (1 if len(current_parts) > 1 else 0)
             if current_parts:
                 blocks.append((" ".join(current_parts), current_start))
 
