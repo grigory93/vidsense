@@ -413,7 +413,7 @@ async def ask_question(
     conversation_id = body.get("conversation_id") or str(uuid.uuid4())
 
     index_path = os.path.join(app_settings.embeddings_dir, str(video_id))
-    if not os.path.exists(index_path):
+    if not os.path.isdir(index_path):
         raise HTTPException(
             status_code=404,
             detail={"message": "No embeddings available for this video. Please regenerate the analysis."},
