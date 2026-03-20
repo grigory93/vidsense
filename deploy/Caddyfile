@@ -1,0 +1,34 @@
+# VidSense — sample Caddyfile for production VM deployment
+#
+# Replace YOUR_DOMAIN with the actual domain (e.g. vidsense.example.com).
+# Caddy obtains and renews Let's Encrypt TLS certificates automatically.
+#
+# Generate a bcrypt password hash for basicauth:
+#   caddy hash-password --plaintext 'YOUR_PASSWORD'
+
+YOUR_DOMAIN {
+    # --- Authentication (Path A: proxy-level basic auth) ---
+    basicauth {
+        # Replace with your username and bcrypt hash:
+        # admin $2a$14$XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    }
+
+    # --- Security headers ---
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # --- Reverse proxy to uvicorn ---
+    reverse_proxy 127.0.0.1:8000 {
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # --- Request limits ---
+    request_body {
+        max_size 10MB
+    }
+}

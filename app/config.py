@@ -42,7 +42,10 @@ class Settings(BaseSettings):
 
     # App
     app_debug: bool = Field(default=False)
-    app_secret_key: str = Field(default="change-me-in-production")
+    app_secret_key: str = Field(
+        default="change-me-in-production",
+        description="Secret key for session signing. App refuses to start with the default placeholder.",
+    )
 
     # Processing limits
     max_video_duration_sec: int = Field(default=5400, description="90 minutes in seconds")
