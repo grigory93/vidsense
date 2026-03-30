@@ -12,7 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from app.config import settings
+from app.config import APP_SECRET_KEY_PLACEHOLDER, settings
 from app.database import init_db
 
 logging.basicConfig(
@@ -21,12 +21,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_INSECURE_SECRET = "change-me-in-production"
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.app_secret_key == _INSECURE_SECRET:
+    if settings.app_secret_key == APP_SECRET_KEY_PLACEHOLDER:
         raise RuntimeError(
             "APP_SECRET_KEY is still the default placeholder. "
             "Set a strong random value in your .env file. Generate one with:\n"

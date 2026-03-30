@@ -3,6 +3,8 @@ import json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 
+APP_SECRET_KEY_PLACEHOLDER = "change-me-in-production"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -45,7 +47,7 @@ class Settings(BaseSettings):
     # App
     app_debug: bool = Field(default=False)
     app_secret_key: str = Field(
-        default="change-me-in-production",
+        default=APP_SECRET_KEY_PLACEHOLDER,
         description="Secret key for session signing. App refuses to start with the default placeholder.",
     )
     app_allowed_hosts: list[str] = Field(
