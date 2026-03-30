@@ -1,9 +1,24 @@
 import json
 
+from pydantic import AliasChoices, Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
 
 APP_SECRET_KEY_PLACEHOLDER = "change-me-in-production"
+
+
+def _parse_allowed_hosts_string(raw: str) -> list[str]:
+    """Parse comma-separated or JSON-array hosts (used for APP_ALLOWED_HOSTS)."""
+    stripped = raw.strip()
+    if not stripped:
+        return []
+    if stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    return [item.strip() for item in stripped.split(",") if item.strip()]
 
 
 class Settings(BaseSettings):
@@ -50,11 +65,14 @@ class Settings(BaseSettings):
         default=APP_SECRET_KEY_PLACEHOLDER,
         description="Secret key for session signing. App refuses to start with the default placeholder.",
     )
-    app_allowed_hosts: list[str] = Field(
-        default=["localhost", "127.0.0.1", "::1"],
+    # String storage: pydantic-settings JSON-decodes env vars for list[str] *before* validators,
+    # so comma-separated APP_ALLOWED_HOSTS (or empty) would crash at import. Parse in app_allowed_hosts.
+    allowed_hosts_raw: str = Field(
+        default="localhost,127.0.0.1,::1",
+        validation_alias=AliasChoices("app_allowed_hosts", "APP_ALLOWED_HOSTS"),
         description=(
-            "Allowed Host headers. In production include your public domain, e.g. "
-            "vidsense.info,localhost,127.0.0.1. "
+            "Comma-separated allowed Host headers (optional JSON array). "
+            "In production include your public domain, e.g. vidsense.info,localhost,127.0.0.1. "
             "Pytest adds testserver via tests/conftest.py (TestClient default Host)."
         ),
     )
@@ -66,22 +84,19 @@ class Settings(BaseSettings):
     # LLM retry config
     llm_max_retries: int = Field(default=2)
 
-    @field_validator("app_allowed_hosts", mode="before")
+    @field_validator("allowed_hosts_raw", mode="before")
     @classmethod
-    def parse_app_allowed_hosts(cls, value: str | list[str]) -> list[str]:
+    def coerce_allowed_hosts_raw(cls, value: object) -> str:
+        if isinstance(value, list):
+            return ",".join(str(x).strip() for x in value if str(x).strip())
         if isinstance(value, str):
-            raw = value.strip()
-            if not raw:
-                return []
-            if raw.startswith("["):
-                try:
-                    parsed = json.loads(raw)
-                except json.JSONDecodeError:
-                    parsed = None
-                if isinstance(parsed, list):
-                    return [str(item).strip() for item in parsed if str(item).strip()]
-            return [item.strip() for item in raw.split(",") if item.strip()]
-        return value
+            return value
+        return str(value)
+
+    @computed_field
+    @property
+    def app_allowed_hosts(self) -> list[str]:
+        return _parse_allowed_hosts_string(self.allowed_hosts_raw)
 
 
 settings = Settings()
