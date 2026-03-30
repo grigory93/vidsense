@@ -72,7 +72,10 @@ class Settings(BaseSettings):
             if not raw:
                 return []
             if raw.startswith("["):
-                parsed = json.loads(raw)
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    parsed = None
                 if isinstance(parsed, list):
                     return [str(item).strip() for item in parsed if str(item).strip()]
             return [item.strip() for item in raw.split(",") if item.strip()]
