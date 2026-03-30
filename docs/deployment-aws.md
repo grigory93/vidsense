@@ -183,7 +183,7 @@ Minimum required changes from the example:
 APP_DEBUG=false
 # Generate: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 APP_SECRET_KEY=<generated-value>
-APP_ALLOWED_HOSTS=vidsense.example.com,localhost,127.0.0.1
+APP_ALLOWED_HOSTS=vidsense.info,localhost,127.0.0.1
 # ^ Must include the real domain or requests get 400 Bad Request with no body.
 
 # Set your provider
@@ -225,7 +225,7 @@ sudo cp /opt/vidsense/deploy/Caddyfile /etc/caddy/Caddyfile
 sudo nano /etc/caddy/Caddyfile
 ```
 
-Replace `YOUR_DOMAIN` with your actual domain (e.g. `vidsense.example.com`)
+Replace `YOUR_DOMAIN` with your actual domain (e.g. `vidsense.info`)
 and add a `basicauth` entry. Generate the bcrypt hash:
 
 ```bash
@@ -235,7 +235,7 @@ caddy hash-password --plaintext 'YourChosenPassword'
 Paste the hash into the Caddyfile:
 
 ```caddyfile
-vidsense.example.com {
+vidsense.info {
     basicauth {
         admin $2a$14$<hash-output-here>
     }
@@ -269,16 +269,16 @@ Stock Caddy does not ship built-in rate limiting, so that part is intentionally 
 
 ```bash
 # From your local machine — should redirect to HTTPS and prompt for auth
-curl -I http://vidsense.example.com
+curl -I http://vidsense.info
 
 # Confirm the app is up and responding
-curl -u admin:YourChosenPassword https://vidsense.example.com
+curl -u admin:YourChosenPassword https://vidsense.info
 
 # Confirm port 8000 is NOT reachable from the internet
 curl --max-time 5 http://<Elastic-IP>:8000   # should time out or refuse
 ```
 
-Open `https://vidsense.example.com` in a browser, authenticate, and exercise
+Open `https://vidsense.info` in a browser, authenticate, and exercise
 the main flow (paste a YouTube URL and run an analysis).
 
 ---

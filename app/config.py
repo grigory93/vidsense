@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     )
     app_allowed_hosts: list[str] = Field(
         default=["localhost", "127.0.0.1", "::1"],
-        description="Allowed Host headers. In production include your public domain, e.g. vidsense.example.com,localhost,127.0.0.1",
+        description=(
+            "Allowed Host headers. In production include your public domain, e.g. "
+            "vidsense.info,localhost,127.0.0.1. "
+            "Pytest adds testserver via tests/conftest.py (TestClient default Host)."
+        ),
     )
 
     # Processing limits

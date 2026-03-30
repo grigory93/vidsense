@@ -1,6 +1,6 @@
 # VidSense — sample Caddyfile for production VM deployment
 #
-# Replace YOUR_DOMAIN with the actual domain (e.g. vidsense.example.com).
+# Replace YOUR_DOMAIN with the actual domain (e.g. vidsense.info).
 # Caddy obtains and renews Let's Encrypt TLS certificates automatically.
 #
 # Generate a bcrypt password hash for basicauth:

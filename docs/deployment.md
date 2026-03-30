@@ -6,7 +6,7 @@ VidSense is designed to run on a single VM behind a TLS reverse proxy. The [`dep
 
 1. **Set `APP_SECRET_KEY`** in `.env` (the app refuses to start with the default placeholder).  
    Generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
-2. **Set `APP_ALLOWED_HOSTS`** to your public domain plus localhost, e.g. `APP_ALLOWED_HOSTS=vidsense.example.com,localhost,127.0.0.1`. If this is missing or wrong, requests arriving with the domain `Host` header get a **400 Bad Request** with no body — the most common cause of "blank page after login."
+2. **Set `APP_ALLOWED_HOSTS`** to your public domain plus localhost, e.g. `APP_ALLOWED_HOSTS=vidsense.info,localhost,127.0.0.1`. If this is missing or wrong, requests arriving with the domain `Host` header get a **400 Bad Request** with no body — the most common cause of "blank page after login."
 3. **Set `APP_DEBUG=false`** — disables `/docs`, `/redoc`, `/openapi.json` and hides request bodies from error responses.
 4. **TLS + reverse proxy** — copy [`deploy/Caddyfile`](../deploy/Caddyfile), replace `YOUR_DOMAIN`, and configure `basicauth` credentials. Caddy handles Let's Encrypt automatically.
 5. **Bind address** — the app binds to `127.0.0.1:8000` by default; only the reverse proxy should be internet-facing.
