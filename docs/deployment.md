@@ -28,7 +28,7 @@ The sample Caddy config also includes a basic CSP, request-size limit, and upstr
 |------|---------|
 | [`deploy/Caddyfile`](../deploy/Caddyfile) | TLS, basicauth, security headers, CSP, request-size limit, reverse proxy to `127.0.0.1:8000` |
 | [`deploy/vidsense.service`](../deploy/vidsense.service) | systemd unit: non-root user, restart policy, hardening options |
-| [`deploy/bootstrap.sh`](../deploy/bootstrap.sh) | Idempotent VM setup script (Ubuntu): installs Python, uv, Caddy, clones repo, creates service user |
+| [`deploy/bootstrap.sh`](../deploy/bootstrap.sh) | Idempotent VM setup script (Ubuntu): uv, Caddy, clone repo, `uv python install` + `uv sync`, service user |
 
 ## Related
 

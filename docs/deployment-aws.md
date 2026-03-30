@@ -154,12 +154,13 @@ sudo /tmp/bootstrap.sh --repo https://github.com/your-org/vidsense.git --branch 
 ```
 
 The script:
-- Updates apt packages
-- Installs Python 3.12, git, and [uv](https://docs.astral.sh/uv/)
+- Updates apt packages and installs git
+- Installs [uv](https://docs.astral.sh/uv/)
 - Installs Caddy from the official Caddy apt repository
 - Creates a `vidsense` system user
 - Clones the repo to `/opt/vidsense` (or pulls if already present)
-- Creates the Python virtual environment via `uv sync`
+- Runs `uv python install` using the version in [`.python-version`](../.python-version) (downloads a matching CPython; Ubuntu’s system `python3.12` is often **too old** for `requires-python` in `pyproject.toml`)
+- Creates the virtual environment and installs dependencies via `uv sync`
 - Installs the systemd unit from `deploy/vidsense.service`
 - Enables and starts Caddy so the final config reload works predictably
 

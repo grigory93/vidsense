@@ -25,7 +25,6 @@ REPO_URL="https://github.com/grigory93/vidsense.git"
 BRANCH="main"
 DEPLOY_DIR="/opt/vidsense"
 SERVICE_USER="vidsense"
-PYTHON_VERSION="3.12"
 
 # ---------------------------------------------------------------------------
 # Flag parsing
@@ -59,27 +58,16 @@ apt-get install -y -qq \
     curl \
     gnupg \
     apt-transport-https \
-    software-properties-common \
     ca-certificates \
     lsb-release
 
-# ---------------------------------------------------------------------------
-# 2. Python 3.12 (deadsnakes PPA)
-# ---------------------------------------------------------------------------
-if ! python${PYTHON_VERSION} --version &>/dev/null; then
-    info "Installing Python ${PYTHON_VERSION}..."
-    add-apt-repository -y ppa:deadsnakes/ppa
-    apt-get update -qq
-    apt-get install -y -qq \
-        python${PYTHON_VERSION} \
-        python${PYTHON_VERSION}-venv \
-        python${PYTHON_VERSION}-dev
-else
-    info "Python ${PYTHON_VERSION} already installed, skipping."
-fi
+# Python: the project pins a micro version in .python-version and requires
+# >= that in pyproject.toml. Ubuntu's stock python3.12 is often older (e.g.
+# 3.12.3), so we install the matching CPython with uv after the repo is
+# cloned — see "uv python install" below.
 
 # ---------------------------------------------------------------------------
-# 3. uv (Python package manager)
+# 2. uv (Python package manager)
 # ---------------------------------------------------------------------------
 if ! command -v uv &>/dev/null; then
     info "Installing uv..."
@@ -102,7 +90,7 @@ fi
 export PATH="/usr/local/bin:$PATH"
 
 # ---------------------------------------------------------------------------
-# 4. Caddy (official apt repository)
+# 3. Caddy (official apt repository)
 # ---------------------------------------------------------------------------
 if ! command -v caddy &>/dev/null; then
     info "Installing Caddy..."
@@ -120,7 +108,7 @@ fi
 systemctl enable --now caddy
 
 # ---------------------------------------------------------------------------
-# 5. Service user
+# 4. Service user
 # ---------------------------------------------------------------------------
 if ! id "${SERVICE_USER}" &>/dev/null; then
     info "Creating system user '${SERVICE_USER}'..."
@@ -130,7 +118,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Clone or update the repository
+# 5. Clone or update the repository
 # ---------------------------------------------------------------------------
 if [[ -d "${DEPLOY_DIR}/.git" ]]; then
     info "Repository already present at ${DEPLOY_DIR}, pulling latest..."
@@ -147,15 +135,32 @@ fi
 chown -R "${SERVICE_USER}:${SERVICE_USER}" "${DEPLOY_DIR}"
 
 # ---------------------------------------------------------------------------
-# 7. Python virtual environment and dependencies
+# 6. Python interpreter (uv-managed) and project dependencies
 # ---------------------------------------------------------------------------
+PYTHON_SPEC_FILE="${DEPLOY_DIR}/.python-version"
+if [[ -f "${PYTHON_SPEC_FILE}" ]]; then
+    UV_PYTHON=$(tr -d '[:space:]' < "${PYTHON_SPEC_FILE}")
+else
+    UV_PYTHON="3.12"
+fi
+if [[ -z "${UV_PYTHON}" ]]; then
+    UV_PYTHON="3.12"
+fi
+
+info "Installing CPython ${UV_PYTHON} via uv (matches .python-version / requires-python)..."
+sudo -u "${SERVICE_USER}" \
+    HOME="${DEPLOY_DIR}" \
+    XDG_CACHE_HOME="${DEPLOY_DIR}/.cache" \
+    uv python install "${UV_PYTHON}"
+
 info "Installing Python dependencies via uv..."
 sudo -u "${SERVICE_USER}" \
     HOME="${DEPLOY_DIR}" \
-    uv sync --project "${DEPLOY_DIR}" --python "python${PYTHON_VERSION}"
+    XDG_CACHE_HOME="${DEPLOY_DIR}/.cache" \
+    uv sync --project "${DEPLOY_DIR}" --python "${UV_PYTHON}"
 
 # ---------------------------------------------------------------------------
-# 8. Data directory
+# 7. Data directory
 # ---------------------------------------------------------------------------
 DATA_DIR="${DEPLOY_DIR}/data"
 mkdir -p "${DATA_DIR}/embeddings"
@@ -163,7 +168,7 @@ chown -R "${SERVICE_USER}:${SERVICE_USER}" "${DATA_DIR}"
 chmod 750 "${DATA_DIR}"
 
 # ---------------------------------------------------------------------------
-# 9. systemd unit
+# 8. systemd unit
 # ---------------------------------------------------------------------------
 info "Installing systemd unit..."
 cp "${DEPLOY_DIR}/deploy/vidsense.service" /etc/systemd/system/vidsense.service
