@@ -42,6 +42,13 @@ done
 # ---------------------------------------------------------------------------
 info()  { echo "[bootstrap] $*"; }
 check_root() { [[ $EUID -eq 0 ]] || { echo "Run as root or with sudo."; exit 1; }; }
+run_as_service_user() {
+    sudo -u "${SERVICE_USER}" env \
+        HOME="${DEPLOY_DIR}" \
+        XDG_CACHE_HOME="${DEPLOY_DIR}/.cache" \
+        PATH="/usr/local/bin:/usr/bin:/bin" \
+        "$@"
+}
 
 check_root
 
@@ -148,16 +155,10 @@ if [[ -z "${UV_PYTHON}" ]]; then
 fi
 
 info "Installing CPython ${UV_PYTHON} via uv (matches .python-version / requires-python)..."
-sudo -u "${SERVICE_USER}" \
-    HOME="${DEPLOY_DIR}" \
-    XDG_CACHE_HOME="${DEPLOY_DIR}/.cache" \
-    uv python install "${UV_PYTHON}"
+run_as_service_user uv python install "${UV_PYTHON}"
 
 info "Installing Python dependencies via uv..."
-sudo -u "${SERVICE_USER}" \
-    HOME="${DEPLOY_DIR}" \
-    XDG_CACHE_HOME="${DEPLOY_DIR}/.cache" \
-    uv sync --project "${DEPLOY_DIR}" --python "${UV_PYTHON}"
+run_as_service_user uv sync --project "${DEPLOY_DIR}" --python "${UV_PYTHON}"
 
 # ---------------------------------------------------------------------------
 # 7. Data directory
