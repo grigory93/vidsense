@@ -19,6 +19,7 @@ User=vidsense
 Group=vidsense
 WorkingDirectory=/opt/vidsense
 EnvironmentFile=/opt/vidsense/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/vidsense/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5

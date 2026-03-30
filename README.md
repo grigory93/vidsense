@@ -100,8 +100,8 @@ Tests live under `tests/` (e.g. `test_api.py`, `test_graph.py`, `test_schemas.py
 | `app/templates/` | Jinja2 UI |
 | `static/` | Static assets |
 | `data/` | Local DB and embeddings (gitignored — created at runtime) |
-| `deploy/` | Production deployment templates (Caddyfile, systemd unit) |
-| `docs/` | Extra documentation ([VM deployment](./docs/deployment.md)) |
+| `deploy/` | Production deployment templates (Caddyfile, systemd unit, bootstrap.sh) |
+| `docs/` | Extra documentation ([VM deployment](./docs/deployment.md), [AWS guide](./docs/deployment-aws.md)) |
 
 ### Making changes
 

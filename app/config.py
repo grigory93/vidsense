@@ -1,5 +1,7 @@
+import json
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
@@ -46,6 +48,10 @@ class Settings(BaseSettings):
         default="change-me-in-production",
         description="Secret key for session signing. App refuses to start with the default placeholder.",
     )
+    app_allowed_hosts: list[str] = Field(
+        default=["localhost", "127.0.0.1", "::1"],
+        description="Allowed Host headers. In production include your public domain, e.g. vidsense.example.com,localhost,127.0.0.1",
+    )
 
     # Processing limits
     max_video_duration_sec: int = Field(default=5400, description="90 minutes in seconds")
@@ -53,6 +59,20 @@ class Settings(BaseSettings):
 
     # LLM retry config
     llm_max_retries: int = Field(default=2)
+
+    @field_validator("app_allowed_hosts", mode="before")
+    @classmethod
+    def parse_app_allowed_hosts(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            return [item.strip() for item in raw.split(",") if item.strip()]
+        return value
 
 
 settings = Settings()
