@@ -43,11 +43,12 @@ done
 info()  { echo "[bootstrap] $*"; }
 check_root() { [[ $EUID -eq 0 ]] || { echo "Run as root or with sudo."; exit 1; }; }
 run_as_service_user() {
-    sudo -u "${SERVICE_USER}" env \
+    sudo -u "${SERVICE_USER}" env -u UV_CONFIG_FILE \
         HOME="${DEPLOY_DIR}" \
+        XDG_CONFIG_HOME="${DEPLOY_DIR}/.config" \
         XDG_CACHE_HOME="${DEPLOY_DIR}/.cache" \
         PATH="/usr/local/bin:/usr/bin:/bin" \
-        "$@"
+        sh -c 'cd "$1" && shift && exec "$@"' sh "${DEPLOY_DIR}" "$@"
 }
 
 check_root
