@@ -100,6 +100,8 @@ Tests live under `tests/` (e.g. `test_api.py`, `test_graph.py`, `test_schemas.py
 | `app/templates/` | Jinja2 UI |
 | `static/` | Static assets |
 | `data/` | Local DB and embeddings (gitignored — created at runtime) |
+| `deploy/` | Production deployment templates (Caddyfile, systemd unit, bootstrap.sh) |
+| `docs/` | Extra documentation ([VM deployment](./docs/deployment.md), [AWS guide](./docs/deployment-aws.md)) |
 
 ### Making changes
 
@@ -118,6 +120,12 @@ Tests live under `tests/` (e.g. `test_api.py`, `test_graph.py`, `test_schemas.py
 1. Open an issue or discuss larger changes before heavy refactors.  
 2. Keep changes focused; add or update tests for behavior you change.  
 3. Run `uv run pytest` before opening a PR.
+
+---
+
+## Production (VM)
+
+Run behind TLS and a reverse proxy; templates live in `deploy/`. Full checklist, access-control notes, and file references: **[docs/deployment.md](docs/deployment.md)**.
 
 ---
 

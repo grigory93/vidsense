@@ -87,6 +87,7 @@ _YDL_OPTS: dict[str, Any] = {
     "no_warnings": True,
     "skip_download": True,
     "extract_flat": False,
+    "cachedir": False,
 }
 
 

@@ -1,0 +1,37 @@
+# VidSense — systemd unit template
+#
+# Install:
+#   1. Create a dedicated user:  sudo useradd --system --shell /usr/sbin/nologin vidsense
+#   2. Copy this file:           sudo cp vidsense.service /etc/systemd/system/
+#   3. Edit WorkingDirectory and EnvironmentFile paths to match your deployment.
+#   4. Set permissions:           sudo chmod 600 /opt/vidsense/.env
+#                                 sudo chown -R vidsense:vidsense /opt/vidsense
+#   5. Enable and start:         sudo systemctl daemon-reload
+#                                 sudo systemctl enable --now vidsense
+
+[Unit]
+Description=VidSense — AI-powered YouTube knowledge extraction
+After=network.target
+
+[Service]
+Type=simple
+User=vidsense
+Group=vidsense
+WorkingDirectory=/opt/vidsense
+EnvironmentFile=/opt/vidsense/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/vidsense/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/vidsense/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

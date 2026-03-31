@@ -1,0 +1,46 @@
+# VidSense — sample Caddyfile for production VM deployment
+#
+# Replace YOUR_DOMAIN with the actual domain (e.g. vidsense.info).
+# Caddy obtains and renews Let's Encrypt TLS certificates automatically.
+#
+# Generate a bcrypt password hash for basicauth:
+#   caddy hash-password --plaintext 'YOUR_PASSWORD'
+
+YOUR_DOMAIN {
+    # --- Authentication (Path A: proxy-level basic auth) ---
+    # WARNING: Caddy will refuse to load if basicauth has zero accounts.
+    # You MUST uncomment and fill in at least one line below before reloading.
+    # Generate hash:  caddy hash-password --plaintext 'YourPassword'
+    basicauth {
+        # admin $2a$14$XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    }
+
+    # --- Security headers ---
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        # Alpine.js (unpkg CDN) uses new Function(); browsers require script-src 'unsafe-eval'.
+        Content-Security-Policy   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' data: https:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+        -Server
+    }
+
+    # --- Reverse proxy to uvicorn ---
+    reverse_proxy 127.0.0.1:8000 {
+        header_up X-Forwarded-Proto {scheme}
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 30s
+        }
+    }
+
+    # --- Request limits ---
+    request_body {
+        max_size 10MB
+    }
+
+    # Stock Caddy does not ship built-in rate limiting. For v1, rely on
+    # Basic Auth + request size limits; add a rate-limit plugin or fronting
+    # service later if the app starts seeing abusive traffic.
+}
