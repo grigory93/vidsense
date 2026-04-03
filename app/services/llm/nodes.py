@@ -10,6 +10,7 @@ session_factory stored in GraphState.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -61,6 +62,23 @@ logger = logging.getLogger(__name__)
 _CHAR_THRESHOLD_FOR_CHUNKING = 40_000  # ~30-40 min of typical speech
 
 
+_PERMANENT_ERROR_CODES = frozenset({
+    # OpenAI: billing exhaustion and invalid key
+    "insufficient_quota",
+    "invalid_api_key",
+    # Google: invalid API key (distinct from transient resource_exhausted rate limits)
+    "api_key_invalid",
+    # Anthropic: billing exhaustion
+    "credit balance is too low",
+})
+
+
+def _is_permanent_api_error(exc: Exception) -> bool:
+    """True for quota/auth errors that retrying cannot fix."""
+    msg = str(exc).lower()
+    return any(code in msg for code in _PERMANENT_ERROR_CODES)
+
+
 async def _invoke_with_structured_output(
     llm: BaseChatModel,
     schema: type,
@@ -69,6 +87,11 @@ async def _invoke_with_structured_output(
 ) -> tuple[object | None, str | None]:
     """
     Call llm.with_structured_output(schema) with retry on ValidationError.
+
+    - ValidationError: re-prompts with schema feedback (up to max_retries times).
+    - Permanent API errors (quota exhausted, invalid key): breaks immediately.
+    - Transient errors: sleeps 2^attempt seconds then retries.
+
     Returns (result, error_message).
     """
     structured_llm = llm.with_structured_output(schema)
@@ -91,8 +114,12 @@ async def _invoke_with_structured_output(
                 messages = messages + [HumanMessage(content=feedback)]
         except Exception as exc:
             last_error = str(exc)
+            if _is_permanent_api_error(exc):
+                logger.error("Permanent API error — will not retry: %s", exc)
+                break
             logger.error("LLM invocation error (attempt %d): %s", attempt + 1, exc)
             if attempt < max_retries:
+                await asyncio.sleep(2 ** attempt)
                 continue
             break
 

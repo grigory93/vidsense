@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
+import operator
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -19,6 +20,8 @@ from app.models.schemas import (
 )
 from app.services.llm.nodes import (
     _find_term_occurrences,
+    _invoke_with_structured_output,
+    _is_permanent_api_error,
     embed_transcript_node,
     extract_chapters_node,
     extract_glossary_node,
@@ -660,3 +663,177 @@ def test_chunk_segments_small_transcript_stays_single():
     segments = [{"text": "Short text.", "start": i, "duration": 1} for i in range(5)]
     chunks = chunk_segments(segments, max_chars=10_000)
     assert len(chunks) == 1
+
+
+# ---------------------------------------------------------------------------
+# _is_permanent_api_error
+# ---------------------------------------------------------------------------
+
+
+def test_is_permanent_api_error_detects_quota():
+    assert _is_permanent_api_error(Exception("insufficient_quota")) is True
+
+
+def test_is_permanent_api_error_detects_invalid_key():
+    assert _is_permanent_api_error(Exception("invalid_api_key")) is True
+
+
+def test_is_permanent_api_error_detects_google_invalid_key():
+    # Google surfaces invalid API keys as 'api_key_invalid' in the error body
+    assert _is_permanent_api_error(
+        Exception("400 API key not valid. Please pass a valid API key. [api_key_invalid]")
+    ) is True
+
+
+def test_is_permanent_api_error_detects_anthropic_billing():
+    # Anthropic surfaces billing exhaustion with this specific phrase
+    assert _is_permanent_api_error(
+        Exception("Your credit balance is too low to access the Anthropic API.")
+    ) is True
+
+
+def test_is_permanent_api_error_false_for_google_rate_limit():
+    # Google resource_exhausted is used for transient rate limits — must NOT fast-fail
+    assert _is_permanent_api_error(Exception("resource_exhausted")) is False
+
+
+def test_is_permanent_api_error_false_for_rate_limit():
+    # rate_limit_exceeded is transient — should NOT be treated as permanent
+    assert _is_permanent_api_error(Exception("rate_limit_exceeded")) is False
+
+
+def test_is_permanent_api_error_false_for_generic():
+    assert _is_permanent_api_error(Exception("connection timeout")) is False
+
+
+def test_is_permanent_api_error_case_insensitive():
+    assert _is_permanent_api_error(Exception("Insufficient_Quota error")) is True
+
+
+# ---------------------------------------------------------------------------
+# _invoke_with_structured_output — quota fast-fail and backoff
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invoke_quota_error_does_not_retry():
+    """insufficient_quota breaks immediately without sleeping or retrying."""
+    quota_exc = Exception(
+        "Error code: 429 - {'error': {'code': 'insufficient_quota'}}"
+    )
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(side_effect=quota_exc)
+    llm = MagicMock()
+    llm.with_structured_output = MagicMock(return_value=structured)
+
+    with patch("app.services.llm.nodes.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        result, error = await _invoke_with_structured_output(llm, MagicMock(), [], max_retries=2)
+
+    # Only called once (no retries)
+    assert structured.ainvoke.call_count == 1
+    mock_sleep.assert_not_called()
+    assert result is None
+    assert "insufficient_quota" in (error or "")
+
+
+@pytest.mark.asyncio
+async def test_invoke_transient_error_sleeps_between_retries():
+    """Transient errors sleep 2^attempt seconds before each retry."""
+    transient_exc = Exception("connection timeout")
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(side_effect=transient_exc)
+    llm = MagicMock()
+    llm.with_structured_output = MagicMock(return_value=structured)
+
+    with patch("app.services.llm.nodes.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        result, error = await _invoke_with_structured_output(llm, MagicMock(), [], max_retries=2)
+
+    assert structured.ainvoke.call_count == 3  # initial + 2 retries
+    assert mock_sleep.call_count == 2
+    # Exponential: sleep(1) then sleep(2)
+    mock_sleep.assert_any_call(1)
+    mock_sleep.assert_any_call(2)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_invoke_succeeds_on_second_attempt():
+    """Succeeds on the second attempt after a transient failure."""
+    from pydantic import BaseModel
+
+    class DummySchema(BaseModel):
+        value: str
+
+    expected = DummySchema(value="ok")
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        side_effect=[Exception("connection reset"), expected]
+    )
+    llm = MagicMock()
+    llm.with_structured_output = MagicMock(return_value=structured)
+
+    with patch("app.services.llm.nodes.asyncio.sleep", new_callable=AsyncMock):
+        result, error = await _invoke_with_structured_output(llm, DummySchema, [], max_retries=2)
+
+    assert result == expected
+    assert error is None
+    assert structured.ainvoke.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# LangGraph errors reducer (Annotated[list, operator.add])
+# ---------------------------------------------------------------------------
+
+
+def test_errors_reducer_combines_lists():
+    """operator.add is the LangGraph reducer for GraphState.errors.
+    Parallel nodes returning separate error lists must be concatenated, not overwritten."""
+    errors_a = ["Summary generation failed: timeout"]
+    errors_b = ["Chapter extraction failed: timeout"]
+    combined = operator.add(errors_a, errors_b)
+    assert combined == [
+        "Summary generation failed: timeout",
+        "Chapter extraction failed: timeout",
+    ]
+
+
+def test_errors_reducer_with_empty_initial():
+    assert operator.add([], ["some error"]) == ["some error"]
+
+
+def test_errors_reducer_with_empty_update():
+    assert operator.add(["existing"], []) == ["existing"]
+
+
+@pytest.mark.asyncio
+async def test_parallel_nodes_errors_do_not_overwrite_each_other():
+    """When two pipeline nodes both fail, both errors appear in the final accumulated list.
+
+    Simulates what LangGraph does: each node returns {"errors": [...]}, and the
+    reducer (operator.add) appends rather than replaces.
+    """
+    llm = MagicMock()
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
+    llm.with_structured_output = MagicMock(return_value=structured)
+
+    ts = _make_transcript_source("Some text.")
+    base_state = {
+        "transcript_source": ts,
+        "focus_prompt": None,
+        "pipeline_failed": False,
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
+    }
+
+    with patch("app.services.llm.nodes.get_llm", return_value=llm):
+        summary_result = await gen_summaries_node(base_state)
+        mind_map_result = await extract_mind_map_node(base_state)
+
+    # Each node returns its own error list
+    assert len(summary_result["errors"]) > 0
+    assert len(mind_map_result["errors"]) > 0
+
+    # The reducer combines them
+    accumulated = operator.add(summary_result["errors"], mind_map_result["errors"])
+    assert len(accumulated) == 2
