@@ -19,6 +19,7 @@ class GraphState(TypedDict, total=False):
     run: Any              # AnalysisRun (attached to the caller's session; nodes use run_id instead)
     transcript_source: Any  # TranscriptSource
     focus_prompt: Any  # str | None
+    language_code: Any  # str — normalized ISO 639-1 code of the transcript
 
     # Intermediate results — summaries & chapters (V1)
     summary_result: Any    # SummarySchema | None

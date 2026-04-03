@@ -33,11 +33,16 @@
       </div>
 
       <div x-show="serverError" x-cloak
-           class="mb-5 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+           :class="isContentError
+             ? 'mb-5 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm'
+             : 'mb-5 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm'">
         <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
         </svg>
-        <span x-text="serverError"></span>
+        <div>
+          <span x-text="serverError"></span>
+          <span x-show="errorHint" x-cloak class="block mt-1 text-xs opacity-75" x-text="errorHint"></span>
+        </div>
       </div>
 
       <form @submit.prevent="submitForm" novalidate>
@@ -169,7 +174,7 @@
       </form>
 
       <p class="mt-4 text-center text-xs text-slate-400">
-        Supports public YouTube videos up to 90 minutes · English captions required
+        Supports public YouTube videos up to 90 minutes · Captions required
       </p>
     </div>
 
@@ -217,10 +222,30 @@ function analyzeForm() {
     loading: false,
     clientError: '',
     serverError: '',
+    errorCode: '',
     urlTouched: false,
     previewId: '',
     previewTitle: '',
     previewImageFailed: false,
+
+    // Content-limitation errors are amber warnings, not red failures.
+    get isContentError() {
+      return ['UNSUPPORTED_LANGUAGE', 'VIDEO_TOO_LONG', 'TRANSCRIPTS_DISABLED',
+              'NO_TRANSCRIPT', 'VIDEO_UNAVAILABLE', 'RATE_LIMIT'].includes(this.errorCode);
+    },
+
+    // Short, actionable hint shown beneath the main error message.
+    get errorHint() {
+      const hints = {
+        UNSUPPORTED_LANGUAGE: 'No transcript could be found in a supported language.',
+        VIDEO_TOO_LONG: 'VidSense supports videos up to 90 minutes.',
+        TRANSCRIPTS_DISABLED: 'VidSense requires captions to function — this video has none.',
+        NO_TRANSCRIPT: 'No captions are available for this video.',
+        VIDEO_UNAVAILABLE: 'Check that the video is public and not age-restricted.',
+        RATE_LIMIT: 'Please wait a moment, then try again.',
+      };
+      return hints[this.errorCode] || '';
+    },
 
     focusChips: [
       'Key takeaways',
@@ -273,6 +298,7 @@ function analyzeForm() {
     async submitForm() {
       this.clientError = '';
       this.serverError = '';
+      this.errorCode = '';
       this.urlTouched = true;
 
       if (!this.isValidUrl) {
@@ -298,6 +324,7 @@ function analyzeForm() {
           const detail = data.detail;
           if (typeof detail === 'object' && detail.message) {
             this.serverError = detail.message;
+            this.errorCode = detail.error_code || '';
           } else if (typeof detail === 'string') {
             this.serverError = detail;
           } else {

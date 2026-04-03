@@ -159,8 +159,9 @@ async def gen_summaries_node(state: GraphState) -> dict:
 
     await _set_step(state, "generating_summaries")
 
+    language_code = state.get("language_code", "en")
     transcript_text = transcript_source.raw_text
-    messages = build_summary_messages(transcript_text, focus_prompt)
+    messages = build_summary_messages(transcript_text, focus_prompt, language_code=language_code)
 
     logger.info("[run=%d] gen_summaries: invoking LLM for 3-level summary", run_id)
     result, error = await _invoke_with_structured_output(
@@ -226,10 +227,12 @@ async def extract_chapters_node(state: GraphState) -> dict:
 
     await _set_step(state, "extracting_chapters")
 
+    language_code = state.get("language_code", "en")
+
     if raw_len <= _CHAR_THRESHOLD_FOR_CHUNKING or not segments:
         logger.info("[run=%d] extract_chapters: single-pass extraction", run_id)
         formatted = format_transcript_with_timestamps(segments) if segments else transcript_source.raw_text
-        messages = build_chapter_messages(formatted, focus_prompt)
+        messages = build_chapter_messages(formatted, focus_prompt, language_code=language_code)
         result, error = await _invoke_with_structured_output(
             llm, ChapterListSchema, messages, settings.llm_max_retries
         )
@@ -280,7 +283,8 @@ async def extract_chapters_node(state: GraphState) -> dict:
         )
         formatted_chunk = format_transcript_with_timestamps(chunk)
         messages = build_chapter_messages_chunk(
-            formatted_chunk, i + 1, total, start_str, end_str, focus_prompt
+            formatted_chunk, i + 1, total, start_str, end_str, focus_prompt,
+            language_code=language_code,
         )
         result, error = await _invoke_with_structured_output(
             llm, ChapterListSchema, messages, settings.llm_max_retries
@@ -351,8 +355,10 @@ async def extract_mind_map_node(state: GraphState) -> dict:
     if chapters_result and hasattr(chapters_result, "chapters"):
         chapter_ids_titles = [(c.chapter_id, c.title) for c in chapters_result.chapters]
 
+    language_code = state.get("language_code", "en")
     messages = build_mind_map_messages(
-        transcript_source.raw_text, chapter_ids_titles, focus_prompt
+        transcript_source.raw_text, chapter_ids_titles, focus_prompt,
+        language_code=language_code,
     )
 
     result, error = await _invoke_with_structured_output(
@@ -397,7 +403,8 @@ async def extract_glossary_node(state: GraphState) -> dict:
     logger.info("[run=%d] extract_glossary: starting", run_id)
     await _set_step(state, "extracting_glossary")
 
-    messages = build_glossary_messages(transcript_source.raw_text, focus_prompt)
+    language_code = state.get("language_code", "en")
+    messages = build_glossary_messages(transcript_source.raw_text, focus_prompt, language_code=language_code)
 
     result, error = await _invoke_with_structured_output(
         llm, GlossaryListSchema, messages, settings.llm_max_retries
@@ -420,7 +427,7 @@ async def extract_glossary_node(state: GraphState) -> dict:
 
     async with session_factory() as sess:
         for idx, term_schema in enumerate(result.terms):
-            occurrences = _find_term_occurrences(term_schema.term, segments)
+            occurrences = _find_term_occurrences(term_schema.term, segments, language_code)
             gt = GlossaryTerm(
                 run_id=run_id,
                 term=term_schema.term,
@@ -438,7 +445,8 @@ async def extract_glossary_node(state: GraphState) -> dict:
 
 
 def _find_term_occurrences(
-    term: str, segments: list[dict], max_occurrences: int = 5
+    term: str, segments: list[dict], language_code: str = "en",
+    max_occurrences: int = 5,
 ) -> list[dict]:
     """Find timestamps where a term appears in the transcript segments.
 
@@ -446,10 +454,11 @@ def _find_term_occurrences(
     1. Exact substring match within a single segment
     2. Sliding-window match across consecutive segments (multi-word terms
        often span YouTube's short caption segments)
-    3. Stem-based match — strips common English suffixes so "algorithm"
-       matches "algorithms", "optimizing" matches "optimization", etc.
+    3. Stem-based match using language-aware heuristic suffix stripping
     """
     import re
+
+    from app.services.stemming import get_stemmer
 
     if not segments:
         return []
@@ -480,7 +489,6 @@ def _find_term_occurrences(
                 return occurrences
 
     # --- Tier 2: sliding window across consecutive segments ---
-    # Multi-word terms like "neural network architecture" may span 2-3 segments.
     if len(term_lower.split()) > 1:
         window_size = min(len(term_lower.split()), 4)
         for i in range(len(segments) - window_size + 1):
@@ -496,26 +504,17 @@ def _find_term_occurrences(
         return occurrences
 
     # --- Tier 3: stem-based matching ---
-    # Strip common English suffixes so morphological variants match.
-    def _crude_stem(word: str) -> str:
-        for suffix in ("ation", "izing", "ised", "ized", "ting", "ning",
-                        "sion", "ment", "ness", "ally", "ious", "ical",
-                        "ies", "ing", "ion", "ous", "ive", "ble",
-                        "ers", "est", "ful", "ity", "ual",
-                        "ly", "ed", "er", "al", "es", "s"):
-            if len(word) > len(suffix) + 2 and word.endswith(suffix):
-                return word[: -len(suffix)]
-        return word
+    stemmer = get_stemmer(language_code)
 
     term_words = [w for w in re.split(r"[\s\-/]+", term_lower) if len(w) > 2]
     if not term_words:
         return occurrences
 
-    term_stems = {_crude_stem(w) for w in term_words}
+    term_stems = {stemmer.stem(w) for w in term_words}
 
     for seg in segments:
         seg_words = re.split(r"[\s\-/]+", seg.get("text", "").lower())
-        seg_stems = {_crude_stem(w) for w in seg_words if len(w) > 2}
+        seg_stems = {stemmer.stem(w) for w in seg_words if len(w) > 2}
         if term_stems.issubset(seg_stems):
             if _add_hit(seg.get("start", 0)):
                 return occurrences
@@ -529,7 +528,7 @@ def _find_term_occurrences(
                 combined_words.extend(
                     re.split(r"[\s\-/]+", segments[i + j].get("text", "").lower())
                 )
-            combined_stems = {_crude_stem(w) for w in combined_words if len(w) > 2}
+            combined_stems = {stemmer.stem(w) for w in combined_words if len(w) > 2}
             if term_stems.issubset(combined_stems):
                 if _add_hit(segments[i].get("start", 0)):
                     return occurrences

@@ -79,7 +79,10 @@ class Settings(BaseSettings):
 
     # Processing limits
     max_video_duration_sec: int = Field(default=5400, description="90 minutes in seconds")
-    supported_languages: list[str] = Field(default=["en"])
+    supported_languages: list[str] = Field(
+        default=["en", "es", "de", "fr", "it", "pt", "ru", "uk"],
+        description="Ranked language preference for transcript selection. First match wins.",
+    )
 
     # LLM retry config
     llm_max_retries: int = Field(default=2)
