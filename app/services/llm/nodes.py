@@ -130,7 +130,7 @@ async def validate_input_node(state: GraphState) -> dict:
         logger.error("[run=%d] validate_input: no transcript — aborting pipeline", run_id)
         await _set_step(state, "failed")
         return {
-            "errors": state.get("errors", []) + ["No transcript available for processing."],
+            "errors": ["No transcript available for processing."],
             "pipeline_failed": True,
         }
 
@@ -173,7 +173,7 @@ async def gen_summaries_node(state: GraphState) -> dict:
         return {
             "summary_result": None,
             "summary_error": error or "Summary generation failed.",
-            "errors": state.get("errors", []) + [f"Summary generation failed: {error}"],
+            "errors": [f"Summary generation failed: {error}"],
         }
 
     level_map = [
@@ -241,7 +241,7 @@ async def extract_chapters_node(state: GraphState) -> dict:
             return {
                 "chapters_result": None,
                 "chapters_error": error or "Chapter extraction failed.",
-                "errors": state.get("errors", []) + [f"Chapter extraction failed: {error}"],
+                "errors": [f"Chapter extraction failed: {error}"],
             }
 
         async with session_factory() as sess:
@@ -326,7 +326,7 @@ async def extract_chapters_node(state: GraphState) -> dict:
         return {
             "chapters_result": None,
             "chapters_error": "Chapter extraction failed for all transcript chunks.",
-            "errors": state.get("errors", []) + ["Chapter extraction failed."],
+            "errors": ["Chapter extraction failed."],
         }
 
     all_chapters.sort(key=lambda c: c.start_time_sec)
@@ -370,7 +370,7 @@ async def extract_mind_map_node(state: GraphState) -> dict:
         return {
             "mind_map_result": None,
             "mind_map_error": error or "Mind map extraction failed.",
-            "errors": state.get("errors", []) + [f"Mind map extraction failed: {error}"],
+            "errors": [f"Mind map extraction failed: {error}"],
         }
 
     async with session_factory() as sess:
@@ -415,7 +415,7 @@ async def extract_glossary_node(state: GraphState) -> dict:
         return {
             "glossary_result": None,
             "glossary_error": error or "Glossary extraction failed.",
-            "errors": state.get("errors", []) + [f"Glossary extraction failed: {error}"],
+            "errors": [f"Glossary extraction failed: {error}"],
         }
 
     segments: list[dict] = []
@@ -559,7 +559,7 @@ async def embed_transcript_node(state: GraphState) -> dict:
         msg = "Could not resolve video_id for this run."
         return {
             "embedding_error": msg,
-            "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+            "errors": [f"Embedding failed: {msg}"],
         }
 
     logger.info("[run=%d] embed_transcript: starting", run_id)
@@ -581,7 +581,7 @@ async def embed_transcript_node(state: GraphState) -> dict:
         msg = "No transcript available for embedding."
         return {
             "embedding_error": msg,
-            "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+            "errors": [f"Embedding failed: {msg}"],
         }
 
     try:
@@ -654,7 +654,7 @@ async def embed_transcript_node(state: GraphState) -> dict:
             msg = "No transcript text to embed after processing segments."
             return {
                 "embedding_error": msg,
-                "errors": state.get("errors", []) + [f"Embedding failed: {msg}"],
+                "errors": [f"Embedding failed: {msg}"],
             }
 
         store = FAISS.from_texts(final_texts, embedding_model, metadatas=final_metas)
@@ -675,7 +675,7 @@ async def embed_transcript_node(state: GraphState) -> dict:
         logger.error("[run=%d] embed_transcript: FAILED — %s", run_id, exc)
         return {
             "embedding_error": str(exc),
-            "errors": state.get("errors", []) + [f"Embedding failed: {exc}"],
+            "errors": [f"Embedding failed: {exc}"],
         }
 
 

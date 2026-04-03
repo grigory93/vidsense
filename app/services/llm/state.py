@@ -7,7 +7,8 @@ external types that would create circular imports if imported directly.
 """
 from __future__ import annotations
 
-from typing import Any
+import operator
+from typing import Annotated, Any
 
 from typing_extensions import TypedDict
 
@@ -36,7 +37,7 @@ class GraphState(TypedDict, total=False):
 
     # Control flow
     pipeline_failed: bool
-    errors: list
+    errors: Annotated[list, operator.add]
 
     # Output
     final_status: Any
