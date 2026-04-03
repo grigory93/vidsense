@@ -14,6 +14,31 @@ VidSense is designed to run on a single VM behind a TLS reverse proxy. The [`dep
 7. **Non-root service user** — copy [`deploy/vidsense.service`](../deploy/vidsense.service) to `/etc/systemd/system/`, create a `vidsense` user, and adjust paths. See comments in the file.
 8. **File permissions** — `chmod 600 .env`; ensure `data/` is owned by the service user and not world-readable.
 
+## Logging
+
+The app does **not** write logs to a file by itself. [`main.py`](../main.py) configures Python logging with `logging.basicConfig(...)`, which sends messages to **stderr** at INFO level (or DEBUG when `APP_DEBUG=true`).
+
+**Production (systemd):** The sample [`deploy/vidsense.service`](../deploy/vidsense.service) sets `StandardOutput=journal` and `StandardError=journal`, so process output is collected by **journald**. Follow logs with:
+
+```bash
+sudo journalctl -u vidsense -f
+```
+
+**Manual runs — capture logs in a file** by redirecting stderr (Python logging uses stderr) and optionally stdout:
+
+```bash
+# See output in the terminal and append to a file
+uv run uvicorn main:app --host 127.0.0.1 --port 8000 2>&1 | tee -a app.log
+
+# Stderr only to a file
+uv run uvicorn main:app --host 127.0.0.1 --port 8000 2>app.log
+
+# Stdout and stderr together in one file
+uv run uvicorn main:app --host 127.0.0.1 --port 8000 >app.log 2>&1
+```
+
+The same redirects apply if you start via `uv run python main.py` (the `__main__` block runs uvicorn).
+
 ## Access control (v1: proxy-level auth)
 
 The v1 approach uses **Caddy `basicauth`** (or nginx `auth_basic`) in front of the entire site. Browser `fetch()` calls to `/api` work transparently because same-origin requests include Basic Auth credentials automatically.
