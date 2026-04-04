@@ -449,6 +449,8 @@ async def test_finalize_run_sets_complete_when_summaries_and_chapters_ok():
         ),
         "summary_error": None,
         "chapters_error": None,
+        "mind_map_result": MagicMock(),
+        "mind_map_error": None,
     }
     result = await finalize_run_node(state)
     assert result["final_status"] == AnalysisRunStatus.complete
@@ -490,6 +492,8 @@ async def test_finalize_run_sets_partial_when_only_summaries():
         "chapters_result": None,
         "summary_error": None,
         "chapters_error": "Chapter extraction failed.",
+        "mind_map_result": MagicMock(),
+        "mind_map_error": None,
     }
     result = await finalize_run_node(state)
     assert result["final_status"] == AnalysisRunStatus.partial
@@ -586,6 +590,24 @@ async def test_finalize_run_appends_v2_errors_to_error_message():
     assert run.status == AnalysisRunStatus.complete
     assert "Mind map" in (run.error_message or "")
     assert "Embedding" in (run.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_finalize_run_defers_when_mind_map_pending():
+    """finalize_run returns empty when mind_map hasn't reported yet (fan-in race)."""
+    state = {
+        "run_id": 1,
+        "session_factory": None,
+        "pipeline_failed": False,
+        "summary_result": MagicMock(),
+        "chapters_result": MagicMock(),
+        "summary_error": None,
+        "chapters_error": None,
+        "mind_map_result": None,
+        "mind_map_error": None,
+    }
+    result = await finalize_run_node(state)
+    assert result == {}
 
 
 # ---------------------------------------------------------------------------

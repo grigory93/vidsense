@@ -710,13 +710,30 @@ async def finalize_run_node(state: GraphState) -> dict:
     """Set final run status and completion timestamp based on what was persisted."""
     run_id: int = state["run_id"]
     session_factory = state["session_factory"]
-    logger.info("[run=%d] finalize_run: setting final status", run_id)
 
     summary_result: SummarySchema | None = state.get("summary_result")
     chapters_result: ChapterListSchema | None = state.get("chapters_result")
     summary_error: str | None = state.get("summary_error")
     chapters_error: str | None = state.get("chapters_error")
     pipeline_failed: bool = state.get("pipeline_failed", False)
+
+    # Guard: LangGraph may trigger this fan-in node before extract_mind_map
+    # completes (it schedules finalize_run and extract_mind_map in the same
+    # superstep).  When mind_map hasn't reported yet both fields are still at
+    # their initial None — defer so the next invocation has the real result.
+    if not pipeline_failed:
+        mind_map_pending = (
+            state.get("mind_map_result") is None
+            and state.get("mind_map_error") is None
+        )
+        if mind_map_pending:
+            logger.debug(
+                "[run=%d] finalize_run: mind_map still in progress — deferring",
+                run_id,
+            )
+            return {}
+
+    logger.info("[run=%d] finalize_run: setting final status", run_id)
 
     async with session_factory() as sess:
         result = await sess.execute(select(AnalysisRun).where(AnalysisRun.id == run_id))
@@ -771,13 +788,20 @@ async def finalize_run_node(state: GraphState) -> dict:
         run.completed_at = datetime.now(timezone.utc)
         await sess.commit()
 
+    def _feature_status(result, error):
+        if result:
+            return "ok"
+        if error:
+            return f"error({error})"
+        return "pending"
+
     logger.info(
         "[run=%d] finalize_run: done — final_status=%s summaries=%s chapters=%s mind_map=%s glossary=%s embeddings=%s",
         run_id, final_status,
-        "ok" if summary_result else f"error({summary_error})",
-        "ok" if chapters_result else f"error({chapters_error})",
-        "ok" if state.get("mind_map_result") else f"error({state.get('mind_map_error')})",
-        "ok" if state.get("glossary_result") else f"error({state.get('glossary_error')})",
+        _feature_status(summary_result, summary_error),
+        _feature_status(chapters_result, chapters_error),
+        _feature_status(state.get("mind_map_result"), state.get("mind_map_error")),
+        _feature_status(state.get("glossary_result"), state.get("glossary_error")),
         "ok" if not state.get("embedding_error") else f"error({state.get('embedding_error')})",
     )
     return {"final_status": final_status}
