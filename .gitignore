@@ -32,6 +32,7 @@ vidsense.db
 .env
 .env.local
 *.local
+logs/
 
 # IDE
 .idea/

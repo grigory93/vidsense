@@ -81,7 +81,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
     # API routes should return JSON errors, not HTML
     if request.url.path.startswith("/api/"):
         from fastapi.responses import JSONResponse
-        return JSONResponse({"detail": str(exc.detail)}, status_code=exc.status_code)
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
     if exc.status_code == 404:
         return templates.TemplateResponse(request, "404.html", status_code=404)
     return templates.TemplateResponse(request, "500.html", status_code=exc.status_code)

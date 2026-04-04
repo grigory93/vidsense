@@ -12,6 +12,26 @@ from __future__ import annotations
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.lang import language_display_name
+
+_LANGUAGE_HINT = """\
+
+<language>
+The transcript is in {lang_name} ({lang_code}).
+Produce all textual output (summaries, chapter titles, key points, \
+definitions, etc.) in {lang_name}.
+JSON keys must remain in English.
+</language>
+"""
+
+
+def _maybe_language_hint(system: str, language_code: str) -> str:
+    """Append a language-hint block when the transcript is not English."""
+    if language_code == "en":
+        return system
+    name = language_display_name(language_code)
+    return system + _LANGUAGE_HINT.format(lang_name=name, lang_code=language_code)
+
 # ---------------------------------------------------------------------------
 # Summary prompts
 # ---------------------------------------------------------------------------
@@ -62,10 +82,13 @@ Please summarise the following transcript:
 """
 
 
-def build_summary_messages(transcript: str, focus_prompt: str | None = None) -> list:
+def build_summary_messages(
+    transcript: str, focus_prompt: str | None = None, *, language_code: str = "en",
+) -> list:
     system_content = _SUMMARY_SYSTEM
     if focus_prompt and focus_prompt.strip():
         system_content += _SUMMARY_FOCUS_ADDON.format(focus_prompt=focus_prompt.strip())
+    system_content = _maybe_language_hint(system_content, language_code)
     return [
         SystemMessage(content=system_content),
         HumanMessage(content=_SUMMARY_HUMAN.format(transcript=transcript)),
@@ -137,10 +160,13 @@ The start/end times are absolute seconds from the beginning of the video.
 """
 
 
-def build_chapter_messages(transcript: str, focus_prompt: str | None = None) -> list:
+def build_chapter_messages(
+    transcript: str, focus_prompt: str | None = None, *, language_code: str = "en",
+) -> list:
     system_content = _CHAPTER_SYSTEM
     if focus_prompt and focus_prompt.strip():
         system_content += _CHAPTER_FOCUS_ADDON.format(focus_prompt=focus_prompt.strip())
+    system_content = _maybe_language_hint(system_content, language_code)
     return [
         SystemMessage(content=system_content),
         HumanMessage(content=_CHAPTER_HUMAN.format(transcript=transcript)),
@@ -154,10 +180,13 @@ def build_chapter_messages_chunk(
     start_time: str,
     end_time: str,
     focus_prompt: str | None = None,
+    *,
+    language_code: str = "en",
 ) -> list:
     system_content = _CHAPTER_SYSTEM
     if focus_prompt and focus_prompt.strip():
         system_content += _CHAPTER_FOCUS_ADDON.format(focus_prompt=focus_prompt.strip())
+    system_content = _maybe_language_hint(system_content, language_code)
     return [
         SystemMessage(content=system_content),
         HumanMessage(
@@ -226,10 +255,13 @@ def build_mind_map_messages(
     transcript: str,
     chapter_ids_titles: list[tuple[str, str]] | None = None,
     focus_prompt: str | None = None,
+    *,
+    language_code: str = "en",
 ) -> list:
     system_content = _MIND_MAP_SYSTEM
     if focus_prompt and focus_prompt.strip():
         system_content += f"\n<user_focus>\n{focus_prompt.strip()}\n</user_focus>\n"
+    system_content = _maybe_language_hint(system_content, language_code)
     if chapter_ids_titles:
         chapter_list = ", ".join(f'{cid} ({title})' for cid, title in chapter_ids_titles)
         human = _MIND_MAP_HUMAN_WITH_CHAPTERS.format(
@@ -273,10 +305,13 @@ Extract a glossary of domain-specific terms from this transcript:
 """
 
 
-def build_glossary_messages(transcript: str, focus_prompt: str | None = None) -> list:
+def build_glossary_messages(
+    transcript: str, focus_prompt: str | None = None, *, language_code: str = "en",
+) -> list:
     system_content = _GLOSSARY_SYSTEM
     if focus_prompt and focus_prompt.strip():
         system_content += f"\n<user_focus>\n{focus_prompt.strip()}\n</user_focus>\n"
+    system_content = _maybe_language_hint(system_content, language_code)
     return [
         SystemMessage(content=system_content),
         HumanMessage(content=_GLOSSARY_HUMAN.format(transcript=transcript)),

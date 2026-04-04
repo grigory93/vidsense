@@ -41,6 +41,7 @@ def get_llm(task: str | None = None) -> BaseChatModel:
             model=model,
             api_key=settings.openai_api_key or None,  # type: ignore[arg-type]
             temperature=0,
+            max_retries=3,
         )
 
     if provider == "google":
@@ -50,6 +51,7 @@ def get_llm(task: str | None = None) -> BaseChatModel:
             model=model,
             google_api_key=settings.google_api_key or None,  # type: ignore[arg-type]
             temperature=0,
+            max_retries=3,
         )
 
     if provider == "anthropic":
@@ -59,6 +61,7 @@ def get_llm(task: str | None = None) -> BaseChatModel:
             model=model,
             api_key=settings.anthropic_api_key or None,  # type: ignore[arg-type]
             temperature=0,
+            max_retries=3,
         )
 
     if provider == "ollama":
@@ -69,6 +72,7 @@ def get_llm(task: str | None = None) -> BaseChatModel:
             base_url=f"{settings.ollama_base_url}/v1",
             api_key="ollama",
             temperature=0,
+            max_retries=3,
         )
 
     raise ValueError(
@@ -91,11 +95,14 @@ def get_embedding_model() -> Embeddings:
         return OpenAIEmbeddings(
             model=settings.embedding_model,
             api_key=settings.openai_api_key or None,  # type: ignore[arg-type]
+            max_retries=3,
         )
 
     if provider == "google":
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
+        # GoogleGenerativeAIEmbeddings uses `request_options` for retry config,
+        # not `max_retries`. Transient errors here are handled at the call site.
         return GoogleGenerativeAIEmbeddings(
             model=settings.embedding_model,
             google_api_key=settings.google_api_key or None,  # type: ignore[arg-type]
@@ -108,6 +115,7 @@ def get_embedding_model() -> Embeddings:
             model=settings.embedding_model,
             base_url=f"{settings.ollama_base_url}/v1",
             api_key="ollama",
+            max_retries=3,
         )
 
     raise ValueError(

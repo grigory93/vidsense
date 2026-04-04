@@ -7,7 +7,8 @@ external types that would create circular imports if imported directly.
 """
 from __future__ import annotations
 
-from typing import Any
+import operator
+from typing import Annotated, Any
 
 from typing_extensions import TypedDict
 
@@ -19,6 +20,7 @@ class GraphState(TypedDict, total=False):
     run: Any              # AnalysisRun (attached to the caller's session; nodes use run_id instead)
     transcript_source: Any  # TranscriptSource
     focus_prompt: Any  # str | None
+    language_code: Any  # str — normalized ISO 639-1 code of the transcript
 
     # Intermediate results — summaries & chapters (V1)
     summary_result: Any    # SummarySchema | None
@@ -35,7 +37,7 @@ class GraphState(TypedDict, total=False):
 
     # Control flow
     pipeline_failed: bool
-    errors: list
+    errors: Annotated[list, operator.add]
 
     # Output
     final_status: Any

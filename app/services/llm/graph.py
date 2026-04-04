@@ -19,6 +19,7 @@ import logging
 
 from langgraph.graph import END, START, StateGraph
 
+from app.lang import normalize_language_code
 from app.models.db import AnalysisRun, TranscriptSource
 from app.services.llm.nodes import (
     embed_transcript_node,
@@ -96,6 +97,7 @@ async def run_pipeline(
         "run": run,
         "transcript_source": transcript_source,
         "focus_prompt": focus_prompt,
+        "language_code": normalize_language_code(transcript_source.language_code),
         "errors": [],
         "pipeline_failed": False,
         "summary_result": None,

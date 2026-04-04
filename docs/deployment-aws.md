@@ -206,7 +206,18 @@ ls -la /opt/vidsense/.env   # should show -rw------- vidsense vidsense
 ```bash
 sudo systemctl start vidsense
 sudo systemctl status vidsense
-sudo journalctl -u vidsense -f          # follow logs
+sudo journalctl -u vidsense -f          # follow logs (systemd captures stdout/stderr)
+```
+
+**Logging:** The application does not create a log file on disk by default; it logs to stderr, and the sample systemd unit sends that to the journal (see [Logging](deployment.md#logging) in `deployment.md`). Use `journalctl -u vidsense` for production logs.
+
+**Running uvicorn manually on the VM** (for example while debugging), capture output to a file with the same redirects:
+
+```bash
+cd /opt/vidsense
+sudo -u vidsense /opt/vidsense/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 2>&1 | tee -a app.log
+# Or stderr only:  ... 2>app.log
+# Or both streams to one file:  ... >app.log 2>&1
 ```
 
 The app should start and bind to `127.0.0.1:8000`. If it fails, the most
@@ -317,7 +328,13 @@ cd /opt/vidsense
 sudo -u vidsense git pull
 sudo -u vidsense /opt/vidsense/.venv/bin/uv sync
 sudo systemctl restart vidsense
-sudo journalctl -u vidsense -f
+sudo journalctl -u vidsense -f          # follow logs after restart
+```
+
+If you need a file copy of logs after a restart, use `journalctl` redirection instead of relying on the app:
+
+```bash
+sudo journalctl -u vidsense --since "1 hour ago" > /tmp/vidsense-journal.log
 ```
 
 ---

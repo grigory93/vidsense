@@ -28,6 +28,7 @@ from app.models.schemas import (
     RegenerateRequestSchema,
     SummaryResponseSchema,
 )
+from app.lang import language_display_name, normalize_language_code
 from app.services.llm.providers import TASK_QA, get_embedding_model, get_llm
 from app.services.processing import start_analysis
 from app.services.youtube import get_transcript_for_video, ingest_video
@@ -481,17 +482,22 @@ async def ask_question(
 
         citations.sort(key=lambda c: c["start_time_sec"])
 
-        # System message carries role description only — no context chunks here.
-        # Injecting context into the system message would share it across all
-        # history turns, making prior turns appear grounded in this turn's chunks.
-        messages = [
-            SystemMessage(content=(
-                "You are a helpful assistant answering questions about a video based "
-                "on its transcript. Ground your answers strictly in the provided context "
-                "shown before each question. If the context doesn't contain enough "
-                "information, say so."
-            ))
-        ]
+        # Resolve transcript language for the system prompt hint.
+        transcript_source = await get_transcript_for_video(video_id, session)
+        lang = normalize_language_code(
+            transcript_source.language_code if transcript_source else None
+        )
+        qa_system = (
+            "You are a helpful assistant answering questions about a video based "
+            "on its transcript. Ground your answers strictly in the provided context "
+            "shown before each question. If the context doesn't contain enough "
+            "information, say so."
+        )
+        if lang != "en":
+            name = language_display_name(lang)
+            qa_system += f"\nThe video transcript is in {name}. Answer in {name}."
+
+        messages = [SystemMessage(content=qa_system)]
 
         for row in history_rows:
             if row.role == "user":
