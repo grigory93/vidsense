@@ -201,15 +201,13 @@ def _fetch_transcript(video_id: str) -> tuple[list[dict], TranscriptSourceType, 
     generated_by_lang: dict[str, object] = {}
     for t in available:
         lang = normalize_language_code(t.language_code)
-        if lang == "en":
-            continue
         if t.is_generated:
             generated_by_lang.setdefault(lang, t)
         else:
             manual_by_lang.setdefault(lang, t)
 
     pref_langs = [
-        normalize_language_code(lc) for lc in settings.supported_languages if lc != "en"
+        normalize_language_code(lc) for lc in settings.supported_languages
     ]
 
     # Tier 3: manual transcript in preferred language order
@@ -226,7 +224,7 @@ def _fetch_transcript(video_id: str) -> tuple[list[dict], TranscriptSourceType, 
             logger.info("Selected transcript: lang=%s, source=auto_generated, video=%s", lang, video_id)
             return (segments, TranscriptSourceType.auto_generated, lang)
 
-    # Fallback: first available non-English manual, then generated
+    # Fallback: first available manual, then generated
     if manual_by_lang:
         lang, t = next(iter(manual_by_lang.items()))
         segments = _to_segments(t)
