@@ -43,7 +43,7 @@ _REGISTRY: dict[str, Stemmer] = {
         "ies", "ing", "ion", "ous", "ive", "ble",
         "ers", "est", "ful", "ity", "ual",
         "ly", "ed", "er", "al", "es", "s",
-    )),
+    ), min_stem_len=2),
     "es": Stemmer((
         "amiento", "imiento", "ación", "mente", "idad", "ismo",
         "ando", "endo", "ción", "sión",
@@ -52,7 +52,7 @@ _REGISTRY: dict[str, Stemmer] = {
         "ar", "er", "ir", "es", "os", "as", "s",
     )),
     "de": Stemmer((
-        "ungen", "keit", "heit", "lich", "isch", "isch",
+        "ungen", "keit", "heit", "lich", "isch",
         "ung", "bar", "sam", "igt", "ier",
         "ig", "en", "er", "em", "es", "el", "e",
     )),

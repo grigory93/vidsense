@@ -48,10 +48,16 @@ class TestEnglishStemmer:
         ("algorithms", "algorithm"),
         ("optimization", "optimiz"),
         ("processing", "process"),
-        ("running", "runn"),
+        ("running", "run"),       # "ning" suffix matches before "ing"
         ("carefully", "careful"),
         ("happiness", "happi"),
         ("educational", "education"),
+        ("cats", "cat"),          # short 3-char stem after stripping "s"
+        ("dogs", "dog"),
+        ("maps", "map"),
+        ("runs", "run"),
+        ("items", "item"),
+        ("played", "play"),
     ])
     def test_positive_pairs(self, stemmer, word, expected):
         assert stemmer.stem(word) == expected
@@ -60,6 +66,7 @@ class TestEnglishStemmer:
         "an",    # too short
         "go",    # too short
         "cat",   # no matching suffix
+        "is",    # too short to strip "s"
     ])
     def test_negative_pairs(self, stemmer, word):
         assert stemmer.stem(word) == word
