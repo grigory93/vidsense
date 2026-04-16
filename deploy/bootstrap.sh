@@ -118,11 +118,20 @@ systemctl enable --now caddy
 # ---------------------------------------------------------------------------
 # 4. Service user
 # ---------------------------------------------------------------------------
+# Shell is /bin/bash so the GitHub Actions deploy workflow can SSH in as this
+# user and run deploy/update.sh. The SSH key added to authorized_keys should
+# be restricted (e.g. command=".../deploy/update.sh") to limit what it can do.
 if ! id "${SERVICE_USER}" &>/dev/null; then
-    info "Creating system user '${SERVICE_USER}'..."
-    useradd --system --shell /usr/sbin/nologin --home-dir "${DEPLOY_DIR}" "${SERVICE_USER}"
+    info "Creating system user '${SERVICE_USER}' with /bin/bash shell..."
+    useradd --system --shell /bin/bash --home-dir "${DEPLOY_DIR}" "${SERVICE_USER}"
 else
-    info "User '${SERVICE_USER}' already exists, skipping."
+    current_shell=$(getent passwd "${SERVICE_USER}" | cut -d: -f7)
+    if [[ "${current_shell}" != "/bin/bash" ]]; then
+        info "Updating '${SERVICE_USER}' shell from ${current_shell} to /bin/bash for SSH-based deploys..."
+        usermod --shell /bin/bash "${SERVICE_USER}"
+    else
+        info "User '${SERVICE_USER}' already exists with /bin/bash shell, skipping."
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -176,6 +185,30 @@ info "Installing systemd unit..."
 cp "${DEPLOY_DIR}/deploy/vidsense.service" /etc/systemd/system/vidsense.service
 systemctl daemon-reload
 systemctl enable vidsense
+
+# ---------------------------------------------------------------------------
+# 9. Sudoers rule for CI-driven deploys
+# ---------------------------------------------------------------------------
+# The GitHub Actions deploy workflow SSHes in as the vidsense user and runs
+# deploy/update.sh, which needs to restart this systemd unit. Grant exactly
+# that one command — nothing else — so the deploy key has least privilege.
+# Generated file is validated with visudo before installing, so a malformed
+# rule cannot break sudo on the host.
+info "Installing sudoers rule at /etc/sudoers.d/vidsense for CI deploys..."
+SUDOERS_FILE="/etc/sudoers.d/vidsense"
+SUDOERS_TMP="$(mktemp)"
+cat > "${SUDOERS_TMP}" <<EOF
+${SERVICE_USER} ALL=(root) NOPASSWD: /bin/systemctl restart vidsense
+EOF
+if visudo -cf "${SUDOERS_TMP}" >/dev/null; then
+    install -m 0440 -o root -g root "${SUDOERS_TMP}" "${SUDOERS_FILE}"
+    info "Installed ${SUDOERS_FILE}."
+else
+    rm -f "${SUDOERS_TMP}"
+    echo "[bootstrap] ERROR: generated sudoers file failed validation; not installed." >&2
+    exit 1
+fi
+rm -f "${SUDOERS_TMP}"
 
 # ---------------------------------------------------------------------------
 # Done
