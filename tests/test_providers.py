@@ -1,4 +1,5 @@
 """Tests for LLM and embedding provider factories."""
+
 from __future__ import annotations
 
 from unittest.mock import patch

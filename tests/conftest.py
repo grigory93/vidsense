@@ -3,9 +3,7 @@
 import os
 
 # Lifespan refuses to start with the default APP_SECRET_KEY placeholder; CI has no .env.
-os.environ["APP_SECRET_KEY"] = (
-    "pytest-not-the-production-placeholder-use-only-in-tests"
-)
+os.environ["APP_SECRET_KEY"] = "pytest-not-the-production-placeholder-use-only-in-tests"
 
 # Lifespan refuses to start without a YouTube API key; use a dummy for tests.
 os.environ.setdefault("YOUTUBE_API_KEY", "test-yt-api-key-not-real")

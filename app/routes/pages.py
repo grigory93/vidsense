@@ -1,6 +1,7 @@
 """
 Page routes — serve full Jinja2 HTML pages and HTMX partial fragments.
 """
+
 from __future__ import annotations
 
 import json
@@ -54,7 +55,7 @@ async def video_page(
     video_id: int,
     run_id: int | None = None,
     qw: int | None = None,  # quality warning flag
-    from_cache: int = 0,   # 1 = results were served from a cached run
+    from_cache: int = 0,  # 1 = results were served from a cached run
     request: Request = None,
     session: AsyncSession = Depends(get_session),
 ):
@@ -68,9 +69,7 @@ async def video_page(
     # Get the relevant run
     if run_id:
         run_result = await session.execute(
-            select(AnalysisRun).where(
-                AnalysisRun.id == run_id, AnalysisRun.video_id == video_id
-            )
+            select(AnalysisRun).where(AnalysisRun.id == run_id, AnalysisRun.video_id == video_id)
         )
     else:
         run_result = await session.execute(
@@ -115,9 +114,7 @@ async def partial_status(
 
     if run_id:
         run_result = await session.execute(
-            select(AnalysisRun).where(
-                AnalysisRun.id == run_id, AnalysisRun.video_id == video_id
-            )
+            select(AnalysisRun).where(AnalysisRun.id == run_id, AnalysisRun.video_id == video_id)
         )
     else:
         run_result = await session.execute(
@@ -213,9 +210,7 @@ async def partial_status(
         )
 
     # complete or partial — load actual data
-    summaries_result = await session.execute(
-        select(Summary).where(Summary.run_id == run.id)
-    )
+    summaries_result = await session.execute(select(Summary).where(Summary.run_id == run.id))
     summaries = summaries_result.scalars().all()
 
     chapters_result = await session.execute(
@@ -328,12 +323,16 @@ async def partial_status(
             mind_map_data = None
 
     glossary_rows = (
-        await session.execute(
-            select(GlossaryTerm)
-            .where(GlossaryTerm.run_id == run.id)
-            .order_by(GlossaryTerm.sort_order)
+        (
+            await session.execute(
+                select(GlossaryTerm)
+                .where(GlossaryTerm.run_id == run.id)
+                .order_by(GlossaryTerm.sort_order)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     glossary_terms_data: list[dict] = []
     for gt in glossary_rows:
         occurrences = []
@@ -347,15 +346,18 @@ async def partial_status(
                 related = json.loads(gt.related_terms_json)
             except (json.JSONDecodeError, TypeError):
                 pass
-        glossary_terms_data.append({
-            "term": gt.term,
-            "definition": gt.definition,
-            "category": gt.category,
-            "related_terms": related,
-            "occurrences": occurrences,
-        })
+        glossary_terms_data.append(
+            {
+                "term": gt.term,
+                "definition": gt.definition,
+                "category": gt.category,
+                "related_terms": related,
+                "occurrences": occurrences,
+            }
+        )
 
     from app.config import settings as app_settings
+
     embeddings_path = os.path.join(app_settings.embeddings_dir, str(video_id))
     has_embeddings = os.path.isdir(embeddings_path)
 

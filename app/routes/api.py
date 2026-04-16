@@ -4,9 +4,9 @@ JSON API routes for VidSense.
 All endpoints return JSON. HTMX partial endpoints are handled separately
 in pages.py to keep concerns clean.
 """
+
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -20,15 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings as app_settings
 from app.database import get_session
+from app.lang import language_display_name, normalize_language_code
 from app.models.db import AnalysisRun, AnalysisRunStatus, Chapter, QAMessage, Summary, Video
 from app.models.schemas import (
-    AnalyzeRequestSchema,
     AnalysisStatusSchema,
+    AnalyzeRequestSchema,
     ChapterResponseSchema,
     RegenerateRequestSchema,
     SummaryResponseSchema,
 )
-from app.lang import language_display_name, normalize_language_code
 from app.services.llm.providers import TASK_QA, get_embedding_model, get_llm
 from app.services.processing import start_analysis
 from app.services.youtube import get_transcript_for_video, ingest_video
@@ -37,6 +37,7 @@ from app.services.youtube import get_transcript_for_video, ingest_video
 class AskRequest(BaseModel):
     question: str
     conversation_id: str | None = None
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -96,7 +97,7 @@ async def analyze(
                     "message": "Processing is temporarily unavailable due to rate limits. Please try again in a moment.",
                     "recoverable": True,
                 },
-            )
+            ) from exc
         raise HTTPException(
             status_code=502,
             detail={
@@ -104,7 +105,7 @@ async def analyze(
                 "message": "A temporary service error occurred. Please try again.",
                 "recoverable": True,
             },
-        )
+        ) from exc
 
     if not result.success:
         error = result.error
@@ -127,7 +128,9 @@ async def analyze(
         if cached_run:
             logger.info(
                 "Cache hit: returning existing run %d for video %d (focus=%r)",
-                cached_run.id, video.id, body.focus_prompt,
+                cached_run.id,
+                video.id,
+                body.focus_prompt,
             )
             return {
                 "run_id": cached_run.id,
@@ -184,7 +187,8 @@ async def _run_pipeline_bg(
             if not run or not transcript_source:
                 logger.error(
                     "Background task: run %d or transcript source %d not found",
-                    run_id, transcript_source_id,
+                    run_id,
+                    transcript_source_id,
                 )
                 return
 
@@ -217,9 +221,7 @@ async def get_status(
     """
     if run_id:
         result = await session.execute(
-            select(AnalysisRun).where(
-                AnalysisRun.id == run_id, AnalysisRun.video_id == video_id
-            )
+            select(AnalysisRun).where(AnalysisRun.id == run_id, AnalysisRun.video_id == video_id)
         )
     else:
         result = await session.execute(
@@ -305,9 +307,7 @@ async def get_chapters(
 ):
     run = await _get_run(video_id, run_id, session)
     result = await session.execute(
-        select(Chapter)
-        .where(Chapter.run_id == run.id)
-        .order_by(Chapter.sort_order)
+        select(Chapter).where(Chapter.run_id == run.id).order_by(Chapter.sort_order)
     )
     chapters = result.scalars().all()
 
@@ -375,7 +375,9 @@ async def regenerate(
         if cached_run:
             logger.info(
                 "Cache hit: returning existing run %d for video %d (focus=%r)",
-                cached_run.id, video_id, body.focus_prompt,
+                cached_run.id,
+                video_id,
+                body.focus_prompt,
             )
             return {"run_id": cached_run.id, "video_id": video_id, "cached": True}
 
@@ -422,9 +424,7 @@ async def ask_question(
 
     conversation_id = body.conversation_id or str(uuid.uuid4())
 
-    video = (
-        await session.execute(select(Video).where(Video.id == video_id))
-    ).scalar_one_or_none()
+    video = (await session.execute(select(Video).where(Video.id == video_id))).scalar_one_or_none()
     if video is None:
         raise HTTPException(status_code=404, detail={"message": "Video not found."})
 
@@ -432,29 +432,33 @@ async def ask_question(
     if not os.path.isdir(index_path):
         raise HTTPException(
             status_code=404,
-            detail={"message": "No embeddings available for this video. Please regenerate the analysis."},
+            detail={
+                "message": "No embeddings available for this video. Please regenerate the analysis."
+            },
         )
 
     try:
         embedding_model = get_embedding_model()
-        store = FAISS.load_local(
-            index_path, embedding_model, allow_dangerous_deserialization=True
-        )
+        store = FAISS.load_local(index_path, embedding_model, allow_dangerous_deserialization=True)
 
         # Load history.  Scope by video_id so a reused conversation_id cannot
         # leak history from a different video.  Each turn = 1 user + 1 assistant
         # message, so fetch at most qa_max_history * 2 rows.
         history_rows = (
-            await session.execute(
-                select(QAMessage)
-                .where(
-                    QAMessage.video_id == video_id,
-                    QAMessage.conversation_id == conversation_id,
+            (
+                await session.execute(
+                    select(QAMessage)
+                    .where(
+                        QAMessage.video_id == video_id,
+                        QAMessage.conversation_id == conversation_id,
+                    )
+                    .order_by(QAMessage.created_at.desc())
+                    .limit(app_settings.qa_max_history * 2)
                 )
-                .order_by(QAMessage.created_at.desc())
-                .limit(app_settings.qa_max_history * 2)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         history_rows.reverse()
 
         # Expand the retrieval query with a short excerpt of the last assistant
@@ -511,28 +515,37 @@ async def ask_question(
 
         # Inject retrieved context immediately before the current question so it
         # is scoped to this turn only and doesn't contaminate history turns.
-        messages.append(HumanMessage(content=(
-            "Context from transcript:\n" + "\n---\n".join(context_parts)
-            + f"\n\nQuestion: {question}"
-        )))
+        messages.append(
+            HumanMessage(
+                content=(
+                    "Context from transcript:\n"
+                    + "\n---\n".join(context_parts)
+                    + f"\n\nQuestion: {question}"
+                )
+            )
+        )
 
         llm = get_llm(task=TASK_QA)
         response = await llm.ainvoke(messages)
         answer = response.content
 
-        session.add(QAMessage(
-            video_id=video_id,
-            conversation_id=conversation_id,
-            role="user",
-            content=question,
-        ))
-        session.add(QAMessage(
-            video_id=video_id,
-            conversation_id=conversation_id,
-            role="assistant",
-            content=answer,
-            citations_json=json.dumps(citations),
-        ))
+        session.add(
+            QAMessage(
+                video_id=video_id,
+                conversation_id=conversation_id,
+                role="user",
+                content=question,
+            )
+        )
+        session.add(
+            QAMessage(
+                video_id=video_id,
+                conversation_id=conversation_id,
+                role="assistant",
+                content=answer,
+                citations_json=json.dumps(citations),
+            )
+        )
         await session.commit()
 
         return {
@@ -548,7 +561,7 @@ async def ask_question(
         raise HTTPException(
             status_code=500,
             detail={"message": "A temporary service error occurred. Please try again."},
-        )
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -563,9 +576,7 @@ async def _get_run(
 ) -> AnalysisRun:
     if run_id:
         result = await session.execute(
-            select(AnalysisRun).where(
-                AnalysisRun.id == run_id, AnalysisRun.video_id == video_id
-            )
+            select(AnalysisRun).where(AnalysisRun.id == run_id, AnalysisRun.video_id == video_id)
         )
     else:
         result = await session.execute(

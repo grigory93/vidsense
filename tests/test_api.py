@@ -2,6 +2,7 @@
 Integration tests for FastAPI routes using TestClient with an in-memory SQLite DB.
 LLM calls and YouTube ingestion are mocked.
 """
+
 from __future__ import annotations
 
 import json
@@ -9,10 +10,9 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_core.messages import AIMessage
-from sqlalchemy import select
 from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool
+from langchain_core.messages import AIMessage
+from sqlalchemy import StaticPool, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base, get_session
@@ -29,9 +29,7 @@ test_engine = create_async_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
-TestingSessionLocal = async_sessionmaker(
-    test_engine, class_=AsyncSession, expire_on_commit=False
-)
+TestingSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def override_get_session():
@@ -266,8 +264,7 @@ class TestAskEndpoint:
 
         assert resp.status_code == 200
         blob = " ".join(
-            m.content if isinstance(getattr(m, "content", None), str) else ""
-            for m in llm_messages
+            m.content if isinstance(getattr(m, "content", None), str) else "" for m in llm_messages
         )
         assert "SECRET_CROSS_VIDEO_LEAK_USER" not in blob
         assert "SECRET_CROSS_VIDEO_LEAK_ASSIST" not in blob

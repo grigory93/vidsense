@@ -8,6 +8,7 @@ Two families:
 Focus prompt injection uses a bounded <user_focus> marker so the model
 adjusts emphasis without overriding core extraction instructions.
 """
+
 from __future__ import annotations
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -47,7 +48,9 @@ def _build_video_context(
     if comments:
         lines = [f'- "{c.get("text", "")}"' for c in comments[:20] if c.get("text")]
         if lines:
-            parts.append("Top viewer comments (for audience sentiment context):\n" + "\n".join(lines))
+            parts.append(
+                "Top viewer comments (for audience sentiment context):\n" + "\n".join(lines)
+            )
     if not parts:
         return ""
     return "\n<video_context>\n" + "\n".join(parts) + "\n</video_context>\n"
@@ -308,7 +311,7 @@ def build_mind_map_messages(
         system_content += f"\n<user_focus>\n{focus_prompt.strip()}\n</user_focus>\n"
     system_content = _maybe_language_hint(system_content, language_code)
     if chapter_ids_titles:
-        chapter_list = ", ".join(f'{cid} ({title})' for cid, title in chapter_ids_titles)
+        chapter_list = ", ".join(f"{cid} ({title})" for cid, title in chapter_ids_titles)
         human = _MIND_MAP_HUMAN_WITH_CHAPTERS.format(
             transcript=transcript, chapter_list=chapter_list
         )
@@ -351,7 +354,10 @@ Extract a glossary of domain-specific terms from this transcript:
 
 
 def build_glossary_messages(
-    transcript: str, focus_prompt: str | None = None, *, language_code: str = "en",
+    transcript: str,
+    focus_prompt: str | None = None,
+    *,
+    language_code: str = "en",
 ) -> list:
     system_content = _GLOSSARY_SYSTEM
     if focus_prompt and focus_prompt.strip():

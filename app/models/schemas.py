@@ -4,7 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-
 # ---------------------------------------------------------------------------
 # LLM output schemas (used with with_structured_output())
 # ---------------------------------------------------------------------------
@@ -22,7 +21,7 @@ class ChapterSchema(BaseModel):
     transcript_segment: str = Field(description="Transcript text for this chapter")
 
     @model_validator(mode="after")
-    def end_after_start(self) -> "ChapterSchema":
+    def end_after_start(self) -> ChapterSchema:
         if self.end_time_sec <= self.start_time_sec:
             raise ValueError(
                 f"end_time_sec ({self.end_time_sec}) must be greater than "
@@ -89,9 +88,7 @@ class GlossaryTermSchema(BaseModel):
 
     term: str = Field(description="The term or phrase")
     definition: str = Field(description="Concise definition grounded in the transcript context")
-    category: str = Field(
-        description="One of: technical, domain, person, acronym, methodology"
-    )
+    category: str = Field(description="One of: technical, domain, person, acronym, methodology")
     related_terms: list[str] = Field(
         default_factory=list, description="Other glossary terms this relates to"
     )
@@ -152,11 +149,15 @@ class SummaryResponseSchema(BaseModel):
 
 class AnalyzeRequestSchema(BaseModel):
     url: str = Field(description="YouTube video URL")
-    focus_prompt: str | None = Field(default=None, max_length=500, description="Optional global focus prompt")
-    force_regenerate: bool = Field(default=False, description="If true, bypass cached run and rerun the LLM pipeline")
+    focus_prompt: str | None = Field(
+        default=None, max_length=500, description="Optional global focus prompt"
+    )
+    force_regenerate: bool = Field(
+        default=False, description="If true, bypass cached run and rerun the LLM pipeline"
+    )
 
     @model_validator(mode="after")
-    def sanitize_focus_prompt(self) -> "AnalyzeRequestSchema":
+    def sanitize_focus_prompt(self) -> AnalyzeRequestSchema:
         if self.focus_prompt is not None:
             cleaned = self.focus_prompt.strip()
             # Treat very short or whitespace-only prompts as no focus
@@ -165,11 +166,15 @@ class AnalyzeRequestSchema(BaseModel):
 
 
 class RegenerateRequestSchema(BaseModel):
-    focus_prompt: str | None = Field(default=None, max_length=500, description="Optional updated focus prompt")
-    force_regenerate: bool = Field(default=False, description="If true, bypass cached run and rerun the LLM pipeline")
+    focus_prompt: str | None = Field(
+        default=None, max_length=500, description="Optional updated focus prompt"
+    )
+    force_regenerate: bool = Field(
+        default=False, description="If true, bypass cached run and rerun the LLM pipeline"
+    )
 
     @model_validator(mode="after")
-    def sanitize_focus_prompt(self) -> "RegenerateRequestSchema":
+    def sanitize_focus_prompt(self) -> RegenerateRequestSchema:
         if self.focus_prompt is not None:
             cleaned = self.focus_prompt.strip()
             self.focus_prompt = cleaned if len(cleaned) >= 3 else None

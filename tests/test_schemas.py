@@ -1,4 +1,5 @@
 """Tests for Pydantic schema validation."""
+
 import pytest
 from pydantic import ValidationError
 

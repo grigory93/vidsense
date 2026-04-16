@@ -8,6 +8,7 @@ Responsibilities:
 - Cache Video + TranscriptSource in DB to avoid re-ingestion
 - Return typed results for all failure states
 """
+
 from __future__ import annotations
 
 import json
@@ -30,7 +31,6 @@ from app.config import settings
 from app.lang import normalize_language_code
 from app.models.db import (
     AnalysisRun,
-    AnalysisRunStatus,
     TranscriptSource,
     TranscriptSourceType,
     Video,
@@ -90,21 +90,41 @@ _YT_API_BASE = "https://www.googleapis.com/youtube/v3"
 
 # YouTube video category IDs -> display names (YouTube's fixed set)
 _CATEGORY_MAP: dict[str, str] = {
-    "1": "Film & Animation", "2": "Autos & Vehicles", "10": "Music",
-    "15": "Pets & Animals", "17": "Sports", "18": "Short Movies",
-    "19": "Travel & Events", "20": "Gaming", "21": "Videoblogging",
-    "22": "People & Blogs", "23": "Comedy", "24": "Entertainment",
-    "25": "News & Politics", "26": "Howto & Style", "27": "Education",
-    "28": "Science & Technology", "29": "Nonprofits & Activism",
-    "30": "Movies", "31": "Anime/Animation", "32": "Action/Adventure",
-    "33": "Classics", "34": "Comedy", "35": "Documentary", "36": "Drama",
-    "37": "Family", "38": "Foreign", "39": "Horror", "40": "Sci-Fi/Fantasy",
-    "41": "Thriller", "42": "Shorts", "43": "Shows", "44": "Trailers",
+    "1": "Film & Animation",
+    "2": "Autos & Vehicles",
+    "10": "Music",
+    "15": "Pets & Animals",
+    "17": "Sports",
+    "18": "Short Movies",
+    "19": "Travel & Events",
+    "20": "Gaming",
+    "21": "Videoblogging",
+    "22": "People & Blogs",
+    "23": "Comedy",
+    "24": "Entertainment",
+    "25": "News & Politics",
+    "26": "Howto & Style",
+    "27": "Education",
+    "28": "Science & Technology",
+    "29": "Nonprofits & Activism",
+    "30": "Movies",
+    "31": "Anime/Animation",
+    "32": "Action/Adventure",
+    "33": "Classics",
+    "34": "Comedy",
+    "35": "Documentary",
+    "36": "Drama",
+    "37": "Family",
+    "38": "Foreign",
+    "39": "Horror",
+    "40": "Sci-Fi/Fantasy",
+    "41": "Thriller",
+    "42": "Shorts",
+    "43": "Shows",
+    "44": "Trailers",
 }
 
-_ISO_DURATION_RE = re.compile(
-    r"^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$"
-)
+_ISO_DURATION_RE = re.compile(r"^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
 
 
 def _parse_iso8601_duration(iso_str: str) -> int | None:
@@ -186,7 +206,9 @@ async def _fetch_metadata(video_id: str) -> dict[str, Any] | IngestionError:
         "description": snippet.get("description"),
         "thumbnail": thumbnail_url,
         "channel": snippet.get("channelTitle"),
-        "channel_url": f"https://www.youtube.com/channel/{snippet['channelId']}" if snippet.get("channelId") else None,
+        "channel_url": f"https://www.youtube.com/channel/{snippet['channelId']}"
+        if snippet.get("channelId")
+        else None,
         "upload_date": snippet.get("publishedAt"),
         "duration": duration_sec,
         "view_count": int(view_count_raw) if view_count_raw else None,
@@ -230,10 +252,12 @@ async def _fetch_top_comments(video_id: str) -> list[dict[str, str]] | None:
             top = item["snippet"]["topLevelComment"]["snippet"]
             text = (top.get("textDisplay") or "").strip()
             if text:
-                comments.append({
-                    "author": top.get("authorDisplayName", ""),
-                    "text": text[:max_chars],
-                })
+                comments.append(
+                    {
+                        "author": top.get("authorDisplayName", ""),
+                        "text": text[:max_chars],
+                    }
+                )
         except (KeyError, TypeError):
             continue
     return comments or None
@@ -244,7 +268,9 @@ async def _fetch_top_comments(video_id: str) -> list[dict[str, str]] | None:
 # ---------------------------------------------------------------------------
 
 
-def _fetch_transcript(video_id: str) -> tuple[list[dict], TranscriptSourceType, str] | IngestionError:
+def _fetch_transcript(
+    video_id: str,
+) -> tuple[list[dict], TranscriptSourceType, str] | IngestionError:
     """
     Returns (segments, source_type, language_code) on success,
     or an IngestionError on failure.
@@ -277,8 +303,7 @@ def _fetch_transcript(video_id: str) -> tuple[list[dict], TranscriptSourceType, 
 
     def _to_segments(transcript) -> list[dict]:
         return [
-            {"text": s.text, "start": s.start, "duration": s.duration}
-            for s in transcript.fetch()
+            {"text": s.text, "start": s.start, "duration": s.duration} for s in transcript.fetch()
         ]
 
     _EN_CODES = ["en", "en-US", "en-GB"]
@@ -322,9 +347,7 @@ def _fetch_transcript(video_id: str) -> tuple[list[dict], TranscriptSourceType, 
         else:
             manual_by_lang.setdefault(lang, t)
 
-    pref_langs = [
-        normalize_language_code(lc) for lc in settings.supported_languages
-    ]
+    pref_langs = [normalize_language_code(lc) for lc in settings.supported_languages]
 
     # Tier 3: manual transcript in preferred language order
     for lang in pref_langs:
@@ -337,19 +360,27 @@ def _fetch_transcript(video_id: str) -> tuple[list[dict], TranscriptSourceType, 
     for lang in pref_langs:
         if lang in generated_by_lang:
             segments = _to_segments(generated_by_lang[lang])
-            logger.info("Selected transcript: lang=%s, source=auto_generated, video=%s", lang, video_id)
+            logger.info(
+                "Selected transcript: lang=%s, source=auto_generated, video=%s", lang, video_id
+            )
             return (segments, TranscriptSourceType.auto_generated, lang)
 
     # Fallback: first available manual, then generated
     if manual_by_lang:
         lang, t = next(iter(manual_by_lang.items()))
         segments = _to_segments(t)
-        logger.info("Selected transcript: lang=%s, source=manual (fallback), video=%s", lang, video_id)
+        logger.info(
+            "Selected transcript: lang=%s, source=manual (fallback), video=%s", lang, video_id
+        )
         return (segments, TranscriptSourceType.manual, lang)
     if generated_by_lang:
         lang, t = next(iter(generated_by_lang.items()))
         segments = _to_segments(t)
-        logger.info("Selected transcript: lang=%s, source=auto_generated (fallback), video=%s", lang, video_id)
+        logger.info(
+            "Selected transcript: lang=%s, source=auto_generated (fallback), video=%s",
+            lang,
+            video_id,
+        )
         return (segments, TranscriptSourceType.auto_generated, lang)
 
     return IngestionError(
@@ -463,7 +494,9 @@ async def ingest_video(
         session.add(video)
         await session.flush()  # get video.id
 
-    quality_signal = "auto_generated" if source_type == TranscriptSourceType.auto_generated else "good"
+    quality_signal = (
+        "auto_generated" if source_type == TranscriptSourceType.auto_generated else "good"
+    )
     transcript_source = TranscriptSource(
         video_id=video.id,
         raw_text=raw_text,

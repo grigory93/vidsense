@@ -1,9 +1,9 @@
 """Tests for the YouTube ingestion service."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-
 from youtube_transcript_api import NoTranscriptFound
 
 from app.models.db import TranscriptSourceType
@@ -13,11 +13,10 @@ from app.services.youtube import (
     _detect_language,
     _fetch_metadata,
     _fetch_top_comments,
+    _fetch_transcript,
     _parse_iso8601_duration,
     extract_video_id,
-    _fetch_transcript,
 )
-
 
 # ---------------------------------------------------------------------------
 # URL parsing (unchanged)
@@ -55,11 +54,17 @@ class TestExtractVideoId:
 
 class TestBuildRawText:
     def test_joins_segments(self):
-        segments = [{"text": "Hello", "start": 0, "duration": 1}, {"text": "world", "start": 1, "duration": 1}]
+        segments = [
+            {"text": "Hello", "start": 0, "duration": 1},
+            {"text": "world", "start": 1, "duration": 1},
+        ]
         assert _build_raw_text(segments) == "Hello world"
 
     def test_skips_empty_text(self):
-        segments = [{"text": "Hello", "start": 0, "duration": 1}, {"text": "", "start": 1, "duration": 1}]
+        segments = [
+            {"text": "Hello", "start": 0, "duration": 1},
+            {"text": "", "start": 1, "duration": 1},
+        ]
         assert _build_raw_text(segments) == "Hello"
 
     def test_empty_segments(self):
@@ -148,7 +153,9 @@ def _make_api_response(items=None, status_code=200):
             }
         ]
     body = {"items": items}
-    resp = httpx.Response(status_code=status_code, json=body, request=httpx.Request("GET", "https://test"))
+    resp = httpx.Response(
+        status_code=status_code, json=body, request=httpx.Request("GET", "https://test")
+    )
     return resp
 
 
@@ -383,8 +390,12 @@ class TestFetchTranscriptEnglishVariants:
         t_en_au = _make_transcript("en-AU", is_generated=False)
 
         transcript_list = MagicMock()
-        transcript_list.find_manually_created_transcript.side_effect = NoTranscriptFound("FAKE_ID", ["en-AU"], None)
-        transcript_list.find_generated_transcript.side_effect = NoTranscriptFound("FAKE_ID", ["en-AU"], None)
+        transcript_list.find_manually_created_transcript.side_effect = NoTranscriptFound(
+            "FAKE_ID", ["en-AU"], None
+        )
+        transcript_list.find_generated_transcript.side_effect = NoTranscriptFound(
+            "FAKE_ID", ["en-AU"], None
+        )
         transcript_list.__iter__ = lambda self: iter([t_en_au])
         mock_api_cls.return_value.list.return_value = transcript_list
 
@@ -400,8 +411,12 @@ class TestFetchTranscriptEnglishVariants:
         t_en_in = _make_transcript("en-IN", is_generated=True)
 
         transcript_list = MagicMock()
-        transcript_list.find_manually_created_transcript.side_effect = NoTranscriptFound("FAKE_ID", ["en-IN"], None)
-        transcript_list.find_generated_transcript.side_effect = NoTranscriptFound("FAKE_ID", ["en-IN"], None)
+        transcript_list.find_manually_created_transcript.side_effect = NoTranscriptFound(
+            "FAKE_ID", ["en-IN"], None
+        )
+        transcript_list.find_generated_transcript.side_effect = NoTranscriptFound(
+            "FAKE_ID", ["en-IN"], None
+        )
         transcript_list.__iter__ = lambda self: iter([t_en_in])
         mock_api_cls.return_value.list.return_value = transcript_list
 
@@ -418,8 +433,12 @@ class TestFetchTranscriptEnglishVariants:
         t_es = _make_transcript("es", is_generated=False)
 
         transcript_list = MagicMock()
-        transcript_list.find_manually_created_transcript.side_effect = NoTranscriptFound("FAKE_ID", ["en-AU", "es"], None)
-        transcript_list.find_generated_transcript.side_effect = NoTranscriptFound("FAKE_ID", ["en-AU", "es"], None)
+        transcript_list.find_manually_created_transcript.side_effect = NoTranscriptFound(
+            "FAKE_ID", ["en-AU", "es"], None
+        )
+        transcript_list.find_generated_transcript.side_effect = NoTranscriptFound(
+            "FAKE_ID", ["en-AU", "es"], None
+        )
         transcript_list.__iter__ = lambda self: iter([t_es, t_en_au])
         mock_api_cls.return_value.list.return_value = transcript_list
 

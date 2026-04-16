@@ -1,5 +1,4 @@
 """Tests for LLM prompt builder language hints."""
-import pytest
 
 from app.services.llm.prompts import (
     build_chapter_messages,
@@ -44,7 +43,12 @@ class TestChapterPromptLanguageHint:
 
     def test_chunked_inherits_hint(self):
         msgs = build_chapter_messages_chunk(
-            _TRANSCRIPT, 1, 2, "00:00:00", "00:15:00", language_code="de",
+            _TRANSCRIPT,
+            1,
+            2,
+            "00:00:00",
+            "00:15:00",
+            language_code="de",
         )
         system = msgs[0].content
         assert "German" in system

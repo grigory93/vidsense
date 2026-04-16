@@ -6,10 +6,11 @@ Called by API routes to:
 2. Invoke the LangGraph pipeline
 3. Handle top-level errors and mark run as failed if needed
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,9 @@ async def start_analysis(
     run_id = run.id
     logger.info(
         "[run=%d] pipeline starting — video_id=%d focus=%r",
-        run_id, run.video_id, run.focus_prompt,
+        run_id,
+        run.video_id,
+        run.focus_prompt,
     )
 
     try:
@@ -61,16 +64,14 @@ async def start_analysis(
                     db_run.status = AnalysisRunStatus.failed
                     db_run.current_step = None
                     db_run.error_message = f"Unexpected error: {exc}"
-                    db_run.completed_at = datetime.now(timezone.utc)
+                    db_run.completed_at = datetime.now(UTC)
                     await recovery_sess.commit()
             except Exception as inner_exc:
                 logger.error("[run=%d] Failed to mark run as failed: %s", run_id, inner_exc)
 
     # Reload run state from a fresh session to return accurate status
     async with AsyncSessionLocal() as read_sess:
-        result = await read_sess.execute(
-            select(AnalysisRun).where(AnalysisRun.id == run_id)
-        )
+        result = await read_sess.execute(select(AnalysisRun).where(AnalysisRun.id == run_id))
         refreshed = result.scalar_one_or_none()
 
     if refreshed:

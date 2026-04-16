@@ -4,6 +4,7 @@ Shared language-code utilities for VidSense.
 Provides canonical normalization, display-name lookup, and the language-hint
 block appended to LLM system prompts for non-English transcripts.
 """
+
 from __future__ import annotations
 
 LANGUAGE_NAMES: dict[str, str] = {
