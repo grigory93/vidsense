@@ -1,0 +1,94 @@
+name: Deploy
+
+# Manual dispatch only for now. Once the first dev deploy has been verified
+# end-to-end, a small follow-up PR will add `on: push: branches: [main]` here
+# to auto-deploy merged PRs to dev.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options:
+          - dev
+        default: dev
+      branch:
+        description: "Branch or tag to deploy on the VM"
+        type: string
+        default: main
+
+concurrency:
+  # Never overlap deploys to the same environment. `inputs` is only populated
+  # on workflow_dispatch / workflow_call, so fall back to the default env so
+  # this also works once `on: push` is added (see top-of-file note).
+  group: deploy-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+# Minimum privileges. The job only reads the repo for `uses:` reuse and
+# doesn't touch any GitHub resources (issues, packages, etc.).
+permissions:
+  contents: read
+
+jobs:
+  # Reuse the PR CI workflow so we never deploy a build that wouldn't pass
+  # lint + tests on main. This runs on the ref of THIS workflow file (i.e. the
+  # branch deploy.yml lives on), not on `inputs.branch` — which is intentional:
+  # the deploy workflow's own pre-check should match main's standards.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    # `inputs` is empty on push events; fall back to the default env so the
+    # environment-scoped secrets (SSH_*) still resolve when we flip on push.
+    environment: ${{ inputs.environment || 'dev' }}
+    steps:
+      - name: Install SSH private key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Configure SSH known_hosts
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -n "${SSH_KNOWN_HOSTS}" ]; then
+            # Pinned host keys (recommended, especially for prod later).
+            printf '%s\n' "${SSH_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
+          else
+            # TOFU fallback: acceptable for dev, not for prod. Warn in the log.
+            echo "::warning::SSH_KNOWN_HOSTS secret not set — falling back to ssh-keyscan (TOFU)."
+            ssh-keyscan -H "${SSH_HOST}" >> ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Validate deploy branch
+        env:
+          # Default to `main` when triggered by push (inputs is empty then).
+          DEPLOY_BRANCH: ${{ inputs.branch || 'main' }}
+        run: |
+          # DEPLOY_BRANCH is interpolated into a string that gets re-parsed by
+          # the remote shell on the VM (ssh joins its trailing args with spaces
+          # and sends a single string). A value like `main; rm -rf /` would be
+          # executed by the remote bash. Reject anything that isn't a
+          # conservative git-ref: must start with [A-Za-z0-9], contain only
+          # [A-Za-z0-9._/-], and be at most 200 chars. This is stricter than
+          # git's own ref rules on purpose — it removes every shell
+          # metacharacter from the value so no escaping is required downstream.
+          if ! [[ "${DEPLOY_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]]; then
+            echo "::error::Invalid branch/tag '${DEPLOY_BRANCH}'. Allowed: [A-Za-z0-9._/-], must start with alphanumeric, max 200 chars."
+            exit 1
+          fi
+
+      - name: Run deploy/update.sh on ${{ inputs.environment || 'dev' }}
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_BRANCH: ${{ inputs.branch || 'main' }}
+        run: |
+          ssh -o BatchMode=yes "${SSH_USER}@${SSH_HOST}" \
+            "bash /opt/vidsense/deploy/update.sh ${DEPLOY_BRANCH}"
