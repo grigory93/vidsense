@@ -52,15 +52,45 @@ uv sync --frozen
 log "Restarting ${SERVICE_NAME}..."
 sudo /bin/systemctl restart "${SERVICE_NAME}"
 
-# systemctl restart blocks until the unit reaches an active state or fails,
-# but double-check explicitly so a subtle unit failure can't be confused
-# with a successful deploy.
-if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
-    echo "[update] ERROR: ${SERVICE_NAME} is not active after restart." >&2
+# vidsense.service is Type=simple, so `systemctl restart` returns as soon as
+# the uvicorn process is forked — long before it has imported main:app, run
+# its lifespan hook, or bound :8000. That makes `is-active` a near-no-op for
+# the most common deploy-time failures (import errors, missing APP_SECRET_KEY,
+# invalid YOUTUBE_API_KEY, etc.), because Restart=on-failure keeps the unit
+# flipping between "activating" and "active" during a crash loop.
+#
+# The real readiness signal is an HTTP response on the listen port: any status
+# code from 100–599 proves uvicorn imported the app and bound the socket.
+# Require several consecutive successes so a service that briefly answers
+# before crashing can't masquerade as healthy.
+HEALTH_URL="http://127.0.0.1:8000/"
+HEALTH_TIMEOUT=30
+REQUIRED_SUCCESSES=3
+
+log "Probing ${HEALTH_URL} for ${REQUIRED_SUCCESSES} consecutive successes (timeout ${HEALTH_TIMEOUT}s)..."
+deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
+consecutive=0
+last_status="000"
+while (( $(date +%s) < deadline )); do
+    last_status=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 2 "${HEALTH_URL}" || echo "000")
+    if [[ "${last_status}" =~ ^[1-5][0-9][0-9]$ ]]; then
+        consecutive=$(( consecutive + 1 ))
+        if (( consecutive >= REQUIRED_SUCCESSES )); then
+            break
+        fi
+    else
+        consecutive=0
+    fi
+    sleep 1
+done
+
+if (( consecutive < REQUIRED_SUCCESSES )); then
+    echo "[update] ERROR: ${SERVICE_NAME} did not stay healthy on ${HEALTH_URL} within ${HEALTH_TIMEOUT}s (last HTTP status: ${last_status})." >&2
     systemctl status "${SERVICE_NAME}" --no-pager | head -n 40 >&2 || true
     exit 1
 fi
 
+log "${SERVICE_NAME} is serving (HTTP ${last_status})."
 systemctl status "${SERVICE_NAME}" --no-pager | head -n 20
 
 log "Deploy of ${BRANCH} complete at $(git rev-parse --short HEAD)."
