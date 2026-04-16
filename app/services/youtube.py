@@ -123,15 +123,16 @@ def _parse_iso8601_duration(iso_str: str) -> int | None:
 
 async def _fetch_metadata(video_id: str) -> dict[str, Any] | IngestionError:
     """Fetch video metadata from YouTube Data API v3."""
-    url = (
-        f"{_YT_API_BASE}/videos"
-        f"?id={video_id}"
-        f"&part=snippet,contentDetails,statistics"
-        f"&key={settings.youtube_api_key}"
-    )
+    # Pass key via params (not URL string) so it never appears in exception
+    # reprs, access logs, or str(request.url) in future middleware.
+    params = {
+        "id": video_id,
+        "part": "snippet,contentDetails,statistics",
+        "key": settings.youtube_api_key,
+    }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url)
+            resp = await client.get(f"{_YT_API_BASE}/videos", params=params)
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPStatusError as exc:
@@ -201,17 +202,16 @@ def _detect_language(info: dict[str, Any]) -> str | None:
 
 async def _fetch_top_comments(video_id: str) -> list[dict[str, str]] | None:
     """Fetch top comments via YouTube Data API v3 (best-effort, returns None on failure)."""
-    url = (
-        f"{_YT_API_BASE}/commentThreads"
-        f"?videoId={video_id}"
-        f"&part=snippet"
-        f"&order=relevance"
-        f"&maxResults={settings.youtube_max_comments}"
-        f"&key={settings.youtube_api_key}"
-    )
+    params = {
+        "videoId": video_id,
+        "part": "snippet",
+        "order": "relevance",
+        "maxResults": settings.youtube_max_comments,
+        "key": settings.youtube_api_key,
+    }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url)
+            resp = await client.get(f"{_YT_API_BASE}/commentThreads", params=params)
             resp.raise_for_status()
             data = resp.json()
     except Exception:
