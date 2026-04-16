@@ -96,6 +96,9 @@ if (( consecutive < REQUIRED_SUCCESSES )); then
 fi
 
 log "${SERVICE_NAME} is serving (HTTP ${last_status})."
-systemctl status "${SERVICE_NAME}" --no-pager | head -n 20
+# `|| true` guards against SIGPIPE (exit 141) when `head` closes its stdin
+# before `systemctl status` finishes writing — under `set -euo pipefail`
+# that would abort an otherwise-successful deploy.
+systemctl status "${SERVICE_NAME}" --no-pager | head -n 20 || true
 
 log "Deploy of ${BRANCH} complete at $(git rev-parse --short HEAD)."
