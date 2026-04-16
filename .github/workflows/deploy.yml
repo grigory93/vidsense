@@ -18,8 +18,10 @@ on:
         default: main
 
 concurrency:
-  # Never overlap deploys to the same environment.
-  group: deploy-${{ inputs.environment }}
+  # Never overlap deploys to the same environment. `inputs` is only populated
+  # on workflow_dispatch / workflow_call, so fall back to the default env so
+  # this also works once `on: push` is added (see top-of-file note).
+  group: deploy-${{ inputs.environment || 'dev' }}
   cancel-in-progress: false
 
 # Minimum privileges. The job only reads the repo for `uses:` reuse and
@@ -38,7 +40,9 @@ jobs:
   deploy:
     needs: ci
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    # `inputs` is empty on push events; fall back to the default env so the
+    # environment-scoped secrets (SSH_*) still resolve when we flip on push.
+    environment: ${{ inputs.environment || 'dev' }}
     steps:
       - name: Install SSH private key
         uses: webfactory/ssh-agent@v0.9.0
@@ -64,7 +68,8 @@ jobs:
 
       - name: Validate deploy branch
         env:
-          DEPLOY_BRANCH: ${{ inputs.branch }}
+          # Default to `main` when triggered by push (inputs is empty then).
+          DEPLOY_BRANCH: ${{ inputs.branch || 'main' }}
         run: |
           # DEPLOY_BRANCH is interpolated into a string that gets re-parsed by
           # the remote shell on the VM (ssh joins its trailing args with spaces
@@ -79,11 +84,11 @@ jobs:
             exit 1
           fi
 
-      - name: Run deploy/update.sh on ${{ inputs.environment }}
+      - name: Run deploy/update.sh on ${{ inputs.environment || 'dev' }}
         env:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
-          DEPLOY_BRANCH: ${{ inputs.branch }}
+          DEPLOY_BRANCH: ${{ inputs.branch || 'main' }}
         run: |
           ssh -o BatchMode=yes "${SSH_USER}@${SSH_HOST}" \
             "bash /opt/vidsense/deploy/update.sh ${DEPLOY_BRANCH}"
