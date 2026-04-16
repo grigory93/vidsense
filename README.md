@@ -38,7 +38,8 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management and
 # Create virtual environment and install dependencies
 uv sync
 
-# Copy environment template and add at least one provider API key (or use Ollama)
+# Copy environment template: add at least one LLM provider API key (or use Ollama),
+# and YOUTUBE_API_KEY (required — see "YouTube Data API key" below)
 cp .env.example .env
 # Edit .env — see comments in .env.example
 
@@ -49,6 +50,15 @@ uv run uvicorn main:app --reload
 ```
 
 With `APP_DEBUG=true` in `.env`, `python main.py` enables uvicorn reload when run via the `__main__` block.
+
+### YouTube Data API key
+
+**Required.** VidSense calls the [YouTube Data API v3](https://developers.google.com/youtube/v3/getting-started) for video metadata (title, duration, thumbnails, tags, category, and optional top comments for LLM context). Set **`YOUTUBE_API_KEY`** in `.env`; the app refuses to start without it (same idea as `APP_SECRET_KEY`).
+
+- **Create a key:** open [Google Cloud Console → APIs & Credentials](https://console.cloud.google.com/apis/credentials), select or create a project, enable **YouTube Data API v3** for that project, then create an **API key** and paste it as `YOUTUBE_API_KEY`.
+- **Optional:** `YOUTUBE_MAX_COMMENTS` (default `20`) and `YOUTUBE_MAX_COMMENT_CHARS` (default `300`) limit how many top comments are fetched and how long each comment snippet is when passed to the model.
+
+See also the **YouTube** block in [`.env.example`](./.env.example).
 
 ---
 
@@ -72,7 +82,7 @@ Create a local `.env` file before running the app:
 cp .env.example .env
 ```
 
-Then configure at least one LLM provider API key, or point VidSense at a local Ollama instance. The main settings live in `app/config.py`, and `.env.example` documents the expected variables.
+Then configure at least one LLM provider API key (or point VidSense at a local Ollama instance) **and** `YOUTUBE_API_KEY` as described in [YouTube Data API key](#youtube-data-api-key) above. The main settings live in `app/config.py`, and `.env.example` documents the expected variables.
 
 ### Run the test suite
 

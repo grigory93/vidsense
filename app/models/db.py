@@ -51,6 +51,9 @@ class Video(Base):
     upload_date: Mapped[str | None] = mapped_column(String(20))
     view_count: Mapped[int | None] = mapped_column(Integer)
     like_count: Mapped[int | None] = mapped_column(Integer)
+    tags_json: Mapped[str | None] = mapped_column(Text)
+    top_comments_json: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     transcript_sources: Mapped[list["TranscriptSource"]] = relationship(

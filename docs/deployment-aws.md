@@ -187,6 +187,9 @@ APP_SECRET_KEY=<generated-value>
 APP_ALLOWED_HOSTS=vidsense.info,localhost,127.0.0.1
 # ^ Must include the real domain or requests get 400 Bad Request with no body.
 
+# YouTube Data API v3 (required — enable API in Google Cloud, create key)
+YOUTUBE_API_KEY=...
+
 # Set your provider
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
@@ -223,6 +226,7 @@ sudo -u vidsense /opt/vidsense/.venv/bin/uvicorn main:app --host 127.0.0.1 --por
 The app should start and bind to `127.0.0.1:8000`. If it fails, the most
 common causes are:
 - `APP_SECRET_KEY` still set to the default placeholder
+- Missing or invalid `YOUTUBE_API_KEY` (the app validates it at startup)
 - Missing or wrong `OPENAI_API_KEY` / other provider key
 - Python import error (check `journalctl`)
 

@@ -21,6 +21,9 @@ class GraphState(TypedDict, total=False):
     transcript_source: Any  # TranscriptSource
     focus_prompt: Any  # str | None
     language_code: Any  # str — normalized ISO 639-1 code of the transcript
+    video_tags: Any       # list[str] | None — creator tags from YouTube API
+    video_comments: Any   # list[dict] | None — top comments from YouTube API
+    video_category: Any   # str | None — resolved category name
 
     # Intermediate results — summaries & chapters (V1)
     summary_result: Any    # SummarySchema | None

@@ -47,6 +47,9 @@ async def _add_missing_columns(conn) -> None:
         ("videos", "upload_date", "VARCHAR(20)"),
         ("videos", "view_count", "INTEGER"),
         ("videos", "like_count", "INTEGER"),
+        ("videos", "tags_json", "TEXT"),
+        ("videos", "top_comments_json", "TEXT"),
+        ("videos", "category", "VARCHAR(128)"),
     ]
     for table, column, col_type in migrations:
         try:

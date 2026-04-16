@@ -77,6 +77,11 @@ class Settings(BaseSettings):
         ),
     )
 
+    # YouTube Data API v3
+    youtube_api_key: str = Field(default="", description="YouTube Data API v3 key (required)")
+    youtube_max_comments: int = Field(default=20, description="Top comments to fetch per video")
+    youtube_max_comment_chars: int = Field(default=300, description="Per-comment character truncation limit")
+
     # Processing limits
     max_video_duration_sec: int = Field(default=5400, description="90 minutes in seconds")
     supported_languages: list[str] = Field(

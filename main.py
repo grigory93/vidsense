@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -29,6 +30,33 @@ async def lifespan(app: FastAPI):
             "Set a strong random value in your .env file. Generate one with:\n"
             '  python -c "import secrets; print(secrets.token_urlsafe(32))"'
         )
+    if not settings.youtube_api_key:
+        raise RuntimeError(
+            "YOUTUBE_API_KEY is not set. "
+            "Obtain a YouTube Data API v3 key from the Google Cloud Console "
+            "and add it to your .env file."
+        )
+
+    # Validate the YouTube API key with a lightweight request
+    # The special key value "test-yt-api-key-not-real" supports testing without a real key.
+    if settings.youtube_api_key != "test-yt-api-key-not-real":
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    "https://www.googleapis.com/youtube/v3/videos",
+                    params={"id": "dQw4w9WgXcQ", "part": "id", "key": settings.youtube_api_key}
+                )
+                resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (400, 403):
+                raise RuntimeError(
+                    f"YOUTUBE_API_KEY is invalid or lacks permissions (HTTP {exc.response.status_code}). "
+                    "Please verify the key and ensure YouTube Data API v3 is enabled in Google Cloud Console."
+                )
+            logger.warning("YouTube API key validation returned HTTP %d, continuing anyway.", exc.response.status_code)
+        except Exception as exc:
+            logger.warning("Could not reach YouTube API to validate key: %s", exc)
+
     await init_db()
     yield
 

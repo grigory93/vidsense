@@ -32,6 +32,27 @@ def _maybe_language_hint(system: str, language_code: str) -> str:
     name = language_display_name(language_code)
     return system + _LANGUAGE_HINT.format(lang_name=name, lang_code=language_code)
 
+
+def _build_video_context(
+    tags: list[str] | None = None,
+    comments: list[dict] | None = None,
+    category: str | None = None,
+) -> str:
+    """Build an optional ``<video_context>`` block for system prompts."""
+    parts: list[str] = []
+    if category:
+        parts.append(f"Category: {category}")
+    if tags:
+        parts.append(f"Creator tags: {', '.join(tags[:30])}")
+    if comments:
+        lines = [f'- "{c.get("text", "")}"' for c in comments[:20] if c.get("text")]
+        if lines:
+            parts.append("Top viewer comments (for audience sentiment context):\n" + "\n".join(lines))
+    if not parts:
+        return ""
+    return "\n<video_context>\n" + "\n".join(parts) + "\n</video_context>\n"
+
+
 # ---------------------------------------------------------------------------
 # Summary prompts
 # ---------------------------------------------------------------------------
@@ -83,9 +104,18 @@ Please summarise the following transcript:
 
 
 def build_summary_messages(
-    transcript: str, focus_prompt: str | None = None, *, language_code: str = "en",
+    transcript: str,
+    focus_prompt: str | None = None,
+    *,
+    language_code: str = "en",
+    video_tags: list[str] | None = None,
+    video_comments: list[dict] | None = None,
+    video_category: str | None = None,
 ) -> list:
     system_content = _SUMMARY_SYSTEM
+    ctx = _build_video_context(video_tags, video_comments, video_category)
+    if ctx:
+        system_content += ctx
     if focus_prompt and focus_prompt.strip():
         system_content += _SUMMARY_FOCUS_ADDON.format(focus_prompt=focus_prompt.strip())
     system_content = _maybe_language_hint(system_content, language_code)
@@ -161,9 +191,18 @@ The start/end times are absolute seconds from the beginning of the video.
 
 
 def build_chapter_messages(
-    transcript: str, focus_prompt: str | None = None, *, language_code: str = "en",
+    transcript: str,
+    focus_prompt: str | None = None,
+    *,
+    language_code: str = "en",
+    video_tags: list[str] | None = None,
+    video_comments: list[dict] | None = None,
+    video_category: str | None = None,
 ) -> list:
     system_content = _CHAPTER_SYSTEM
+    ctx = _build_video_context(video_tags, video_comments, video_category)
+    if ctx:
+        system_content += ctx
     if focus_prompt and focus_prompt.strip():
         system_content += _CHAPTER_FOCUS_ADDON.format(focus_prompt=focus_prompt.strip())
     system_content = _maybe_language_hint(system_content, language_code)
@@ -182,8 +221,14 @@ def build_chapter_messages_chunk(
     focus_prompt: str | None = None,
     *,
     language_code: str = "en",
+    video_tags: list[str] | None = None,
+    video_comments: list[dict] | None = None,
+    video_category: str | None = None,
 ) -> list:
     system_content = _CHAPTER_SYSTEM
+    ctx = _build_video_context(video_tags, video_comments, video_category)
+    if ctx:
+        system_content += ctx
     if focus_prompt and focus_prompt.strip():
         system_content += _CHAPTER_FOCUS_ADDON.format(focus_prompt=focus_prompt.strip())
     system_content = _maybe_language_hint(system_content, language_code)

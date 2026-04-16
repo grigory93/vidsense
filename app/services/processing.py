@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
-from app.models.db import AnalysisRun, AnalysisRunStatus, TranscriptSource
+from app.models.db import AnalysisRun, AnalysisRunStatus, TranscriptSource, Video
 from app.services.llm.graph import run_pipeline
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ async def start_analysis(
     run: AnalysisRun,
     transcript_source: TranscriptSource,
     session: AsyncSession,
+    video: Video | None = None,
 ) -> AnalysisRun:
     """
     Mark an existing pending AnalysisRun as processing and run the pipeline.
@@ -45,6 +46,7 @@ async def start_analysis(
             run=run,
             transcript_source=transcript_source,
             focus_prompt=run.focus_prompt,
+            video=video,
         )
     except Exception as exc:
         logger.exception("[run=%d] Unhandled pipeline error: %s", run_id, exc)
