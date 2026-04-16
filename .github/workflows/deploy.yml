@@ -1,0 +1,72 @@
+name: Deploy
+
+# Manual dispatch only for now. Once the first dev deploy has been verified
+# end-to-end, a small follow-up PR will add `on: push: branches: [main]` here
+# to auto-deploy merged PRs to dev.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options:
+          - dev
+        default: dev
+      branch:
+        description: "Branch or tag to deploy on the VM"
+        type: string
+        default: main
+
+concurrency:
+  # Never overlap deploys to the same environment.
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+# Minimum privileges. The job only reads the repo for `uses:` reuse and
+# doesn't touch any GitHub resources (issues, packages, etc.).
+permissions:
+  contents: read
+
+jobs:
+  # Reuse the PR CI workflow so we never deploy a build that wouldn't pass
+  # lint + tests on main. This runs on the ref of THIS workflow file (i.e. the
+  # branch deploy.yml lives on), not on `inputs.branch` — which is intentional:
+  # the deploy workflow's own pre-check should match main's standards.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Install SSH private key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Configure SSH known_hosts
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -n "${SSH_KNOWN_HOSTS}" ]; then
+            # Pinned host keys (recommended, especially for prod later).
+            printf '%s\n' "${SSH_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
+          else
+            # TOFU fallback: acceptable for dev, not for prod. Warn in the log.
+            echo "::warning::SSH_KNOWN_HOSTS secret not set — falling back to ssh-keyscan (TOFU)."
+            ssh-keyscan -H "${SSH_HOST}" >> ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run deploy/update.sh on ${{ inputs.environment }}
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_BRANCH: ${{ inputs.branch }}
+        run: |
+          ssh -o BatchMode=yes "${SSH_USER}@${SSH_HOST}" \
+            "bash /opt/vidsense/deploy/update.sh ${DEPLOY_BRANCH}"
