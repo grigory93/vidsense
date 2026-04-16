@@ -188,7 +188,13 @@ async def gen_summaries_node(state: GraphState) -> dict:
 
     language_code = state.get("language_code", "en")
     transcript_text = transcript_source.raw_text
-    messages = build_summary_messages(transcript_text, focus_prompt, language_code=language_code)
+    messages = build_summary_messages(
+        transcript_text, focus_prompt,
+        language_code=language_code,
+        video_tags=state.get("video_tags"),
+        video_comments=state.get("video_comments"),
+        video_category=state.get("video_category"),
+    )
 
     logger.info("[run=%d] gen_summaries: invoking LLM for 3-level summary", run_id)
     result, error = await _invoke_with_structured_output(
@@ -259,7 +265,13 @@ async def extract_chapters_node(state: GraphState) -> dict:
     if raw_len <= _CHAR_THRESHOLD_FOR_CHUNKING or not segments:
         logger.info("[run=%d] extract_chapters: single-pass extraction", run_id)
         formatted = format_transcript_with_timestamps(segments) if segments else transcript_source.raw_text
-        messages = build_chapter_messages(formatted, focus_prompt, language_code=language_code)
+        messages = build_chapter_messages(
+            formatted, focus_prompt,
+            language_code=language_code,
+            video_tags=state.get("video_tags"),
+            video_comments=state.get("video_comments"),
+            video_category=state.get("video_category"),
+        )
         result, error = await _invoke_with_structured_output(
             llm, ChapterListSchema, messages, settings.llm_max_retries
         )
@@ -312,6 +324,9 @@ async def extract_chapters_node(state: GraphState) -> dict:
         messages = build_chapter_messages_chunk(
             formatted_chunk, i + 1, total, start_str, end_str, focus_prompt,
             language_code=language_code,
+            video_tags=state.get("video_tags"),
+            video_comments=state.get("video_comments"),
+            video_category=state.get("video_category"),
         )
         result, error = await _invoke_with_structured_output(
             llm, ChapterListSchema, messages, settings.llm_max_retries

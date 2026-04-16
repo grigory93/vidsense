@@ -56,7 +56,12 @@
       {% if video.upload_date %}
       {% set yd = video.upload_date %}
       {% set months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
-      {% if yd | length == 8 %}
+      {% if 'T' in yd %}
+        {# ISO 8601: 2024-01-15T12:00:00Z #}
+        {% set month_idx = (yd[5:7] | int) - 1 %}
+        {% set upload_formatted = months[month_idx] ~ ' ' ~ (yd[8:10] | int) ~ ', ' ~ yd[0:4] %}
+      {% elif yd | length == 8 %}
+        {# Legacy YYYYMMDD from yt-dlp era #}
         {% set month_idx = (yd[4:6] | int) - 1 %}
         {% set upload_formatted = months[month_idx] ~ ' ' ~ (yd[6:8] | int) ~ ', ' ~ yd[0:4] %}
       {% else %}

@@ -1,12 +1,27 @@
 """Tests for the YouTube ingestion service."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from youtube_transcript_api import NoTranscriptFound
 
 from app.models.db import TranscriptSourceType
-from app.services.youtube import extract_video_id, _build_raw_text, _detect_language, _fetch_transcript
+from app.models.schemas import IngestionError
+from app.services.youtube import (
+    _build_raw_text,
+    _detect_language,
+    _fetch_metadata,
+    _fetch_top_comments,
+    _parse_iso8601_duration,
+    extract_video_id,
+    _fetch_transcript,
+)
+
+
+# ---------------------------------------------------------------------------
+# URL parsing (unchanged)
+# ---------------------------------------------------------------------------
 
 
 class TestExtractVideoId:
@@ -51,6 +66,48 @@ class TestBuildRawText:
         assert _build_raw_text([]) == ""
 
 
+# ---------------------------------------------------------------------------
+# ISO 8601 duration parser
+# ---------------------------------------------------------------------------
+
+
+class TestParseIso8601Duration:
+    def test_hours_minutes_seconds(self):
+        assert _parse_iso8601_duration("PT1H2M3S") == 3723
+
+    def test_minutes_only(self):
+        assert _parse_iso8601_duration("PT5M") == 300
+
+    def test_seconds_only(self):
+        assert _parse_iso8601_duration("PT30S") == 30
+
+    def test_hours_only(self):
+        assert _parse_iso8601_duration("PT2H") == 7200
+
+    def test_zero_duration(self):
+        assert _parse_iso8601_duration("PT0S") == 0
+
+    def test_days_and_time(self):
+        assert _parse_iso8601_duration("P1DT2H3M4S") == 93784
+
+    def test_p0d(self):
+        assert _parse_iso8601_duration("P0D") == 0
+
+    def test_empty_string(self):
+        assert _parse_iso8601_duration("") is None
+
+    def test_malformed(self):
+        assert _parse_iso8601_duration("not-a-duration") is None
+
+    def test_none_input(self):
+        assert _parse_iso8601_duration(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Language detection (updated for API v3 field names)
+# ---------------------------------------------------------------------------
+
+
 class TestDetectLanguage:
     def test_detects_from_language_field(self):
         assert _detect_language({"language": "en"}) == "en"
@@ -58,12 +115,209 @@ class TestDetectLanguage:
     def test_strips_region_code(self):
         assert _detect_language({"language": "en-US"}) == "en"
 
-    def test_falls_back_to_subtitles(self):
-        info = {"subtitles": {"en": [{"url": "..."}]}}
-        assert _detect_language(info) == "en"
-
     def test_returns_none_when_no_lang(self):
         assert _detect_language({}) is None
+
+    def test_returns_none_for_empty_string(self):
+        assert _detect_language({"language": ""}) is None
+
+
+# ---------------------------------------------------------------------------
+# _fetch_metadata via YouTube Data API v3
+# ---------------------------------------------------------------------------
+
+
+def _make_api_response(items=None, status_code=200):
+    """Build a mock httpx.Response for the videos.list endpoint."""
+    if items is None:
+        items = [
+            {
+                "snippet": {
+                    "title": "Test Video",
+                    "description": "A test description",
+                    "channelTitle": "TestChannel",
+                    "channelId": "UC123",
+                    "publishedAt": "2024-06-15T10:30:00Z",
+                    "thumbnails": {"high": {"url": "https://i.ytimg.com/vi/abc/hq.jpg"}},
+                    "tags": ["python", "tutorial"],
+                    "categoryId": "27",
+                    "defaultAudioLanguage": "en",
+                },
+                "contentDetails": {"duration": "PT12M34S"},
+                "statistics": {"viewCount": "123456", "likeCount": "789"},
+            }
+        ]
+    body = {"items": items}
+    resp = httpx.Response(status_code=status_code, json=body, request=httpx.Request("GET", "https://test"))
+    return resp
+
+
+class TestFetchMetadata:
+    @pytest.mark.asyncio
+    async def test_successful_fetch(self):
+        mock_resp = _make_api_response()
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_metadata("test123")
+
+        assert not isinstance(result, IngestionError)
+        assert result["title"] == "Test Video"
+        assert result["channel"] == "TestChannel"
+        assert result["duration"] == 754  # 12*60 + 34
+        assert result["view_count"] == 123456
+        assert result["like_count"] == 789
+        assert result["tags"] == ["python", "tutorial"]
+        assert result["category"] == "Education"
+        assert result["language"] == "en"
+        assert result["upload_date"] == "2024-06-15T10:30:00Z"
+        assert "channel/UC123" in result["channel_url"]
+
+    @pytest.mark.asyncio
+    async def test_empty_items_returns_error(self):
+        mock_resp = _make_api_response(items=[])
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_metadata("nonexistent")
+
+        assert isinstance(result, IngestionError)
+        assert result.error_code == "METADATA_FETCH_FAILED"
+
+    @pytest.mark.asyncio
+    async def test_http_error_returns_ingestion_error(self):
+        error_resp = httpx.Response(
+            status_code=403,
+            json={"error": {"message": "Forbidden"}},
+            request=httpx.Request("GET", "https://test"),
+        )
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=error_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_metadata("forbidden_id")
+
+        assert isinstance(result, IngestionError)
+        assert "403" in result.message
+
+    @pytest.mark.asyncio
+    async def test_network_error_returns_recoverable_error(self):
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Network down"))
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_metadata("any_id")
+
+        assert isinstance(result, IngestionError)
+        assert result.recoverable is True
+
+
+# ---------------------------------------------------------------------------
+# _fetch_top_comments
+# ---------------------------------------------------------------------------
+
+
+class TestFetchTopComments:
+    @pytest.mark.asyncio
+    async def test_successful_fetch(self):
+        body = {
+            "items": [
+                {
+                    "snippet": {
+                        "topLevelComment": {
+                            "snippet": {
+                                "authorDisplayName": "Alice",
+                                "textDisplay": "Great video!",
+                            }
+                        }
+                    }
+                },
+                {
+                    "snippet": {
+                        "topLevelComment": {
+                            "snippet": {
+                                "authorDisplayName": "Bob",
+                                "textDisplay": "Very informative.",
+                            }
+                        }
+                    }
+                },
+            ]
+        }
+        mock_resp = httpx.Response(200, json=body, request=httpx.Request("GET", "https://test"))
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_top_comments("test123")
+
+        assert result is not None
+        assert len(result) == 2
+        assert result[0]["author"] == "Alice"
+        assert result[0]["text"] == "Great video!"
+
+    @pytest.mark.asyncio
+    async def test_comments_disabled_returns_none(self):
+        error_resp = httpx.Response(
+            status_code=403,
+            json={"error": {"errors": [{"reason": "commentsDisabled"}]}},
+            request=httpx.Request("GET", "https://test"),
+        )
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=error_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_top_comments("no_comments")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_truncates_long_comments(self):
+        long_text = "x" * 500
+        body = {
+            "items": [
+                {
+                    "snippet": {
+                        "topLevelComment": {
+                            "snippet": {
+                                "authorDisplayName": "Verbose",
+                                "textDisplay": long_text,
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+        mock_resp = httpx.Response(200, json=body, request=httpx.Request("GET", "https://test"))
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_top_comments("test123")
+
+        assert result is not None
+        assert len(result[0]["text"]) == 300
+
+
+# ---------------------------------------------------------------------------
+# Transcript (unchanged — youtube-transcript-api stays)
+# ---------------------------------------------------------------------------
 
 
 def _make_transcript(language_code: str, is_generated: bool, texts: list[str] | None = None):

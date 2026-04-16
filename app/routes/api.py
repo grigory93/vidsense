@@ -170,7 +170,7 @@ async def _run_pipeline_bg(
 ) -> None:
     """Background task: runs the pipeline with a fresh DB session."""
     from app.database import AsyncSessionLocal
-    from app.models.db import AnalysisRun, TranscriptSource
+    from app.models.db import AnalysisRun, TranscriptSource, Video
 
     try:
         async with AsyncSessionLocal() as session:
@@ -188,10 +188,14 @@ async def _run_pipeline_bg(
                 )
                 return
 
+            video_result = await session.execute(select(Video).where(Video.id == run.video_id))
+            video = video_result.scalar_one_or_none()
+
             await start_analysis(
                 run=run,
                 transcript_source=transcript_source,
                 session=session,
+                video=video,
             )
     except Exception as exc:
         logger.exception("Background task for run %d failed unexpectedly: %s", run_id, exc)

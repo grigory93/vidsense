@@ -15,12 +15,13 @@ different tasks can use different models without sharing state.
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from langgraph.graph import END, START, StateGraph
 
 from app.lang import normalize_language_code
-from app.models.db import AnalysisRun, TranscriptSource
+from app.models.db import AnalysisRun, TranscriptSource, Video
 from app.services.llm.nodes import (
     embed_transcript_node,
     extract_chapters_node,
@@ -80,6 +81,7 @@ async def run_pipeline(
     run: AnalysisRun,
     transcript_source: TranscriptSource,
     focus_prompt: str | None = None,
+    video: Video | None = None,
 ) -> GraphState:
     """
     Execute the full VidSense processing pipeline.
@@ -91,6 +93,22 @@ async def run_pipeline(
     Each node constructs its own LLM via get_llm(task=...) so per-task model
     overrides are respected without passing a shared LLM through state.
     """
+    video_tags: list[str] | None = None
+    video_comments: list[dict] | None = None
+    video_category: str | None = None
+    if video:
+        if video.tags_json:
+            try:
+                video_tags = json.loads(video.tags_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if video.top_comments_json:
+            try:
+                video_comments = json.loads(video.top_comments_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        video_category = video.category
+
     initial_state: GraphState = {
         "session_factory": session_factory,
         "run_id": run.id,
@@ -98,6 +116,9 @@ async def run_pipeline(
         "transcript_source": transcript_source,
         "focus_prompt": focus_prompt,
         "language_code": normalize_language_code(transcript_source.language_code),
+        "video_tags": video_tags,
+        "video_comments": video_comments,
+        "video_category": video_category,
         "errors": [],
         "pipeline_failed": False,
         "summary_result": None,
