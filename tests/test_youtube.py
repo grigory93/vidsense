@@ -192,9 +192,11 @@ class TestFetchMetadata:
 
     @pytest.mark.asyncio
     async def test_http_error_returns_ingestion_error(self):
+        # 403 = YouTube quota/rate-limit — must be recoverable so the UI
+        # shows a "try again later" affordance instead of a dead end.
         error_resp = httpx.Response(
             status_code=403,
-            json={"error": {"message": "Forbidden"}},
+            json={"error": {"message": "quotaExceeded"}},
             request=httpx.Request("GET", "https://test"),
         )
         with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
@@ -207,6 +209,43 @@ class TestFetchMetadata:
 
         assert isinstance(result, IngestionError)
         assert "403" in result.message
+        assert result.recoverable is True
+
+    @pytest.mark.asyncio
+    async def test_429_returns_recoverable_error(self):
+        error_resp = httpx.Response(
+            status_code=429,
+            json={"error": {"message": "Too Many Requests"}},
+            request=httpx.Request("GET", "https://test"),
+        )
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=error_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_metadata("any_id")
+
+        assert isinstance(result, IngestionError)
+        assert result.recoverable is True
+
+    @pytest.mark.asyncio
+    async def test_404_is_not_recoverable(self):
+        error_resp = httpx.Response(
+            status_code=404,
+            json={"error": {"message": "Not Found"}},
+            request=httpx.Request("GET", "https://test"),
+        )
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=error_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await _fetch_metadata("missing_id")
+
+        assert isinstance(result, IngestionError)
+        assert result.recoverable is False
 
     @pytest.mark.asyncio
     async def test_network_error_returns_recoverable_error(self):

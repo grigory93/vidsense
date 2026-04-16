@@ -136,10 +136,15 @@ async def _fetch_metadata(video_id: str) -> dict[str, Any] | IngestionError:
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        # Treat YouTube API's transient statuses (quotaExceeded / rateLimitExceeded
+        # are returned as 403; 429 is short-term throttling; 5xx are server errors)
+        # as recoverable so the UI offers "try again later" rather than a dead end.
+        recoverable = status == 403 or status == 429 or status >= 500
         return IngestionError(
             error_code="METADATA_FETCH_FAILED",
-            message=f"YouTube API returned {exc.response.status_code}: {exc.response.text[:200]}",
-            recoverable=exc.response.status_code >= 500,
+            message=f"YouTube API returned {status}: {exc.response.text[:200]}",
+            recoverable=recoverable,
         )
     except Exception as exc:
         return IngestionError(
