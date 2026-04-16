@@ -5,6 +5,7 @@ Reads LLM_PROVIDER and LLM_MODEL from settings. Per-task model overrides
 (LLM_MODEL_SUMMARIES, LLM_MODEL_CHAPTERS, etc.) let you run heavier models
 for expensive tasks while keeping a cheaper default for the rest.
 """
+
 from __future__ import annotations
 
 from langchain_core.embeddings import Embeddings

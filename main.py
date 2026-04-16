@@ -22,6 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.app_secret_key == APP_SECRET_KEY_PLACEHOLDER:
@@ -44,7 +45,7 @@ async def lifespan(app: FastAPI):
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
                     "https://www.googleapis.com/youtube/v3/videos",
-                    params={"id": "dQw4w9WgXcQ", "part": "id", "key": settings.youtube_api_key}
+                    params={"id": "dQw4w9WgXcQ", "part": "id", "key": settings.youtube_api_key},
                 )
                 resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -52,8 +53,11 @@ async def lifespan(app: FastAPI):
                 raise RuntimeError(
                     f"YOUTUBE_API_KEY is invalid or lacks permissions (HTTP {exc.response.status_code}). "
                     "Please verify the key and ensure YouTube Data API v3 is enabled in Google Cloud Console."
-                )
-            logger.warning("YouTube API key validation returned HTTP %d, continuing anyway.", exc.response.status_code)
+                ) from exc
+            logger.warning(
+                "YouTube API key validation returned HTTP %d, continuing anyway.",
+                exc.response.status_code,
+            )
         except Exception as exc:
             logger.warning("Could not reach YouTube API to validate key: %s", exc)
 
@@ -96,8 +100,12 @@ app.state.templates = templates
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    logger.error("Request validation error on %s %s: %s", request.method, request.url.path, exc.errors())
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    logger.error(
+        "Request validation error on %s %s: %s", request.method, request.url.path, exc.errors()
+    )
     content: dict = {"detail": exc.errors()}
     if settings.app_debug:
         content["body"] = str(exc.body)
@@ -109,6 +117,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
     # API routes should return JSON errors, not HTML
     if request.url.path.startswith("/api/"):
         from fastapi.responses import JSONResponse
+
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
     if exc.status_code == 404:
         return templates.TemplateResponse(request, "404.html", status_code=404)
@@ -119,11 +128,12 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 async def generic_exception_handler(request: Request, exc: Exception) -> HTMLResponse:
     if request.url.path.startswith("/api/"):
         from fastapi.responses import JSONResponse
+
         return JSONResponse({"detail": "Internal server error"}, status_code=500)
     return templates.TemplateResponse(request, "500.html", status_code=500)
 
 
-from app.routes import pages, api  # noqa: E402 — after app is created
+from app.routes import api, pages  # noqa: E402 — after app is created
 
 app.include_router(pages.router)
 app.include_router(api.router, prefix="/api")
@@ -131,6 +141,7 @@ app.include_router(api.router, prefix="/api")
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "main:app",
         host="127.0.0.1",

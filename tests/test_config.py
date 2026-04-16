@@ -16,9 +16,7 @@ class TestParseAppAllowedHosts:
         assert s.app_allowed_hosts == ["[localhost]"]
 
     def test_comma_separated_string(self):
-        s = Settings.model_validate(
-            {"app_allowed_hosts": "vidsense.info, localhost, 127.0.0.1"}
-        )
+        s = Settings.model_validate({"app_allowed_hosts": "vidsense.info, localhost, 127.0.0.1"})
         assert s.app_allowed_hosts == ["vidsense.info", "localhost", "127.0.0.1"]
 
     def test_empty_string(self):
@@ -30,9 +28,7 @@ class TestParseAppAllowedHosts:
         assert s.app_allowed_hosts == []
 
     def test_list_passthrough(self):
-        s = Settings.model_validate(
-            {"app_allowed_hosts": ["a.example.com", "b.example.com"]}
-        )
+        s = Settings.model_validate({"app_allowed_hosts": ["a.example.com", "b.example.com"]})
         assert s.app_allowed_hosts == ["a.example.com", "b.example.com"]
 
     def test_json_decode_error_unclosed_bracket_falls_back(self):

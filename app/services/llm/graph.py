@@ -13,6 +13,7 @@ Graph topology:
 Each parallel node constructs its own LLM via get_llm(task=...) so
 different tasks can use different models without sharing state.
 """
+
 from __future__ import annotations
 
 import json

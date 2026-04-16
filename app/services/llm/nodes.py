@@ -8,12 +8,13 @@ fan-out). They must never share a single AsyncSession — concurrent commits on 
 session raise InvalidRequestError. Each node opens its own short-lived session via the
 session_factory stored in GraphState.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import ValidationError
@@ -62,15 +63,17 @@ logger = logging.getLogger(__name__)
 _CHAR_THRESHOLD_FOR_CHUNKING = 40_000  # ~30-40 min of typical speech
 
 
-_PERMANENT_ERROR_CODES = frozenset({
-    # OpenAI: billing exhaustion and invalid key
-    "insufficient_quota",
-    "invalid_api_key",
-    # Google: invalid API key (distinct from transient resource_exhausted rate limits)
-    "api_key_invalid",
-    # Anthropic: billing exhaustion
-    "credit balance is too low",
-})
+_PERMANENT_ERROR_CODES = frozenset(
+    {
+        # OpenAI: billing exhaustion and invalid key
+        "insufficient_quota",
+        "invalid_api_key",
+        # Google: invalid API key (distinct from transient resource_exhausted rate limits)
+        "api_key_invalid",
+        # Anthropic: billing exhaustion
+        "credit balance is too low",
+    }
+)
 
 
 def _is_permanent_api_error(exc: Exception) -> bool:
@@ -119,7 +122,7 @@ async def _invoke_with_structured_output(
                 break
             logger.error("LLM invocation error (attempt %d): %s", attempt + 1, exc)
             if attempt < max_retries:
-                await asyncio.sleep(2 ** attempt)
+                await asyncio.sleep(2**attempt)
                 continue
             break
 
@@ -164,7 +167,9 @@ async def validate_input_node(state: GraphState) -> dict:
     char_count = len(transcript_source.raw_text)
     logger.info(
         "[run=%d] validate_input: transcript OK — %d chars, source_type=%s",
-        run_id, char_count, transcript_source.source_type,
+        run_id,
+        char_count,
+        transcript_source.source_type,
     )
     await _set_step(state, "generating")
     return {"pipeline_failed": False}
@@ -189,7 +194,8 @@ async def gen_summaries_node(state: GraphState) -> dict:
     language_code = state.get("language_code", "en")
     transcript_text = transcript_source.raw_text
     messages = build_summary_messages(
-        transcript_text, focus_prompt,
+        transcript_text,
+        focus_prompt,
         language_code=language_code,
         video_tags=state.get("video_tags"),
         video_comments=state.get("video_comments"),
@@ -255,7 +261,9 @@ async def extract_chapters_node(state: GraphState) -> dict:
     raw_len = len(transcript_source.raw_text)
     logger.info(
         "[run=%d] extract_chapters: starting — transcript %d chars, %d segments",
-        run_id, raw_len, len(segments),
+        run_id,
+        raw_len,
+        len(segments),
     )
 
     await _set_step(state, "extracting_chapters")
@@ -264,9 +272,12 @@ async def extract_chapters_node(state: GraphState) -> dict:
 
     if raw_len <= _CHAR_THRESHOLD_FOR_CHUNKING or not segments:
         logger.info("[run=%d] extract_chapters: single-pass extraction", run_id)
-        formatted = format_transcript_with_timestamps(segments) if segments else transcript_source.raw_text
+        formatted = (
+            format_transcript_with_timestamps(segments) if segments else transcript_source.raw_text
+        )
         messages = build_chapter_messages(
-            formatted, focus_prompt,
+            formatted,
+            focus_prompt,
             language_code=language_code,
             video_tags=state.get("video_tags"),
             video_comments=state.get("video_comments"),
@@ -299,7 +310,11 @@ async def extract_chapters_node(state: GraphState) -> dict:
                 sess.add(chapter)
             await sess.commit()
 
-        logger.info("[run=%d] extract_chapters: done and persisted — %d chapters", run_id, len(result.chapters))
+        logger.info(
+            "[run=%d] extract_chapters: done and persisted — %d chapters",
+            run_id,
+            len(result.chapters),
+        )
         return {"chapters_result": result, "chapters_error": None}
 
     # Chunked extraction for long transcripts — persist each chunk as it completes
@@ -318,11 +333,20 @@ async def extract_chapters_node(state: GraphState) -> dict:
         await _set_step(state, f"chapters_chunk_{i + 1}_of_{total}")
         logger.info(
             "[run=%d] extract_chapters: chunk %d/%d (%s → %s)",
-            run_id, i + 1, total, start_str, end_str,
+            run_id,
+            i + 1,
+            total,
+            start_str,
+            end_str,
         )
         formatted_chunk = format_transcript_with_timestamps(chunk)
         messages = build_chapter_messages_chunk(
-            formatted_chunk, i + 1, total, start_str, end_str, focus_prompt,
+            formatted_chunk,
+            i + 1,
+            total,
+            start_str,
+            end_str,
+            focus_prompt,
             language_code=language_code,
             video_tags=state.get("video_tags"),
             video_comments=state.get("video_comments"),
@@ -332,7 +356,9 @@ async def extract_chapters_node(state: GraphState) -> dict:
             llm, ChapterListSchema, messages, settings.llm_max_retries
         )
         if result is None:
-            logger.warning("[run=%d] extract_chapters: chunk %d/%d FAILED — %s", run_id, i + 1, total, error)
+            logger.warning(
+                "[run=%d] extract_chapters: chunk %d/%d FAILED — %s", run_id, i + 1, total, error
+            )
             continue
 
         new_chapters = []
@@ -361,7 +387,13 @@ async def extract_chapters_node(state: GraphState) -> dict:
 
         sort_offset += len(new_chapters)
         all_chapters.extend(new_chapters)
-        logger.info("[run=%d] extract_chapters: chunk %d/%d done and persisted — %d chapters", run_id, i + 1, total, len(new_chapters))
+        logger.info(
+            "[run=%d] extract_chapters: chunk %d/%d done and persisted — %d chapters",
+            run_id,
+            i + 1,
+            total,
+            len(new_chapters),
+        )
 
     if not all_chapters:
         logger.error("[run=%d] extract_chapters: all chunks FAILED", run_id)
@@ -399,7 +431,9 @@ async def extract_mind_map_node(state: GraphState) -> dict:
 
     language_code = state.get("language_code", "en")
     messages = build_mind_map_messages(
-        transcript_source.raw_text, chapter_ids_titles, focus_prompt,
+        transcript_source.raw_text,
+        chapter_ids_titles,
+        focus_prompt,
         language_code=language_code,
     )
 
@@ -426,7 +460,9 @@ async def extract_mind_map_node(state: GraphState) -> dict:
 
     logger.info(
         "[run=%d] extract_mind_map: done — %d nodes, %d edges",
-        run_id, len(result.nodes), len(result.edges),
+        run_id,
+        len(result.nodes),
+        len(result.edges),
     )
     return {"mind_map_result": result, "mind_map_error": None}
 
@@ -446,7 +482,9 @@ async def extract_glossary_node(state: GraphState) -> dict:
     await _set_step(state, "extracting_glossary")
 
     language_code = state.get("language_code", "en")
-    messages = build_glossary_messages(transcript_source.raw_text, focus_prompt, language_code=language_code)
+    messages = build_glossary_messages(
+        transcript_source.raw_text, focus_prompt, language_code=language_code
+    )
 
     result, error = await _invoke_with_structured_output(
         llm, GlossaryListSchema, messages, settings.llm_max_retries
@@ -475,7 +513,9 @@ async def extract_glossary_node(state: GraphState) -> dict:
                 term=term_schema.term,
                 definition=term_schema.definition,
                 category=term_schema.category,
-                related_terms_json=json.dumps(term_schema.related_terms) if term_schema.related_terms else None,
+                related_terms_json=json.dumps(term_schema.related_terms)
+                if term_schema.related_terms
+                else None,
                 occurrences_json=json.dumps(occurrences),
                 sort_order=idx,
             )
@@ -487,7 +527,9 @@ async def extract_glossary_node(state: GraphState) -> dict:
 
 
 def _find_term_occurrences(
-    term: str, segments: list[dict], language_code: str = "en",
+    term: str,
+    segments: list[dict],
+    language_code: str = "en",
     max_occurrences: int = 5,
 ) -> list[dict]:
     """Find timestamps where a term appears in the transcript segments.
@@ -627,8 +669,8 @@ async def embed_transcript_node(state: GraphState) -> dict:
         }
 
     try:
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
         from langchain_community.vectorstores import FAISS
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
 
         from app.services.llm.providers import get_embedding_model
 
@@ -658,7 +700,7 @@ async def embed_transcript_node(state: GraphState) -> dict:
             current_parts: list[str] = []
             current_start: int = 0
             current_len: int = 0
-            for text, meta in zip(texts, metadatas):
+            for text, meta in zip(texts, metadatas, strict=True):
                 ts = int(meta["start_time_sec"])
                 if not current_parts:
                     current_start = ts
@@ -685,9 +727,7 @@ async def embed_transcript_node(state: GraphState) -> dict:
                     final_texts.append(chunk)
                     final_metas.append({"start_time_sec": block_start})
         else:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000, chunk_overlap=200
-            )
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             splits = splitter.split_text(transcript_source.raw_text.strip())
             final_texts = splits
             final_metas = [{"start_time_sec": 0}] * len(splits)
@@ -702,14 +742,18 @@ async def embed_transcript_node(state: GraphState) -> dict:
         store = FAISS.from_texts(final_texts, embedding_model, metadatas=final_metas)
 
         import os
+
         from app.config import settings as app_settings
+
         os.makedirs(app_settings.embeddings_dir, exist_ok=True)
         save_path = os.path.join(app_settings.embeddings_dir, str(video_id))
         store.save_local(save_path)
 
         logger.info(
             "[run=%d] embed_transcript: done — %d chunks, saved to %s",
-            run_id, len(final_texts), save_path,
+            run_id,
+            len(final_texts),
+            save_path,
         )
         return {"embedding_error": None}
 
@@ -738,8 +782,7 @@ async def finalize_run_node(state: GraphState) -> dict:
     # their initial None — defer so the next invocation has the real result.
     if not pipeline_failed:
         mind_map_pending = (
-            state.get("mind_map_result") is None
-            and state.get("mind_map_error") is None
+            state.get("mind_map_result") is None and state.get("mind_map_error") is None
         )
         if mind_map_pending:
             logger.debug(
@@ -760,7 +803,7 @@ async def finalize_run_node(state: GraphState) -> dict:
         if pipeline_failed:
             run.status = AnalysisRunStatus.failed
             run.error_message = "; ".join(state.get("errors", ["Pipeline failed."]))
-            run.completed_at = datetime.now(timezone.utc)
+            run.completed_at = datetime.now(UTC)
             run.current_step = None
             await sess.commit()
             return {"final_status": AnalysisRunStatus.failed}
@@ -800,7 +843,7 @@ async def finalize_run_node(state: GraphState) -> dict:
 
         run.status = final_status
         run.current_step = None
-        run.completed_at = datetime.now(timezone.utc)
+        run.completed_at = datetime.now(UTC)
         await sess.commit()
 
     def _feature_status(result, error):
@@ -812,7 +855,8 @@ async def finalize_run_node(state: GraphState) -> dict:
 
     logger.info(
         "[run=%d] finalize_run: done — final_status=%s summaries=%s chapters=%s mind_map=%s glossary=%s embeddings=%s",
-        run_id, final_status,
+        run_id,
+        final_status,
         _feature_status(summary_result, summary_error),
         _feature_status(chapters_result, chapters_error),
         _feature_status(state.get("mind_map_result"), state.get("mind_map_error")),

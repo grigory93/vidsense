@@ -1,5 +1,4 @@
 """Tests for app.lang — language normalization and display names."""
-import pytest
 
 from app.lang import language_display_name, normalize_language_code
 

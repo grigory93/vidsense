@@ -77,7 +77,9 @@ class TranscriptSource(Base):
     source_type: Mapped[TranscriptSourceType] = mapped_column(
         Enum(TranscriptSourceType), default=TranscriptSourceType.unknown
     )
-    quality_signal: Mapped[str | None] = mapped_column(String(50))  # "good", "auto_generated", "poor"
+    quality_signal: Mapped[str | None] = mapped_column(
+        String(50)
+    )  # "good", "auto_generated", "poor"
     language_code: Mapped[str | None] = mapped_column(String(10))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

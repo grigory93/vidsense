@@ -1,4 +1,5 @@
 """Tests for app.services.stemming — per-language heuristic suffix stripping."""
+
 import pytest
 
 from app.services.stemming import Stemmer, get_stemmer
@@ -44,30 +45,36 @@ class TestEnglishStemmer:
     def stemmer(self):
         return get_stemmer("en")
 
-    @pytest.mark.parametrize("word,expected", [
-        ("algorithms", "algorithm"),
-        ("optimization", "optimiz"),
-        ("processing", "process"),
-        ("running", "run"),       # "ning" suffix matches before "ing"
-        ("carefully", "careful"),
-        ("happiness", "happi"),
-        ("educational", "education"),
-        ("cats", "cat"),          # short 3-char stem after stripping "s"
-        ("dogs", "dog"),
-        ("maps", "map"),
-        ("runs", "run"),
-        ("items", "item"),
-        ("played", "play"),
-    ])
+    @pytest.mark.parametrize(
+        "word,expected",
+        [
+            ("algorithms", "algorithm"),
+            ("optimization", "optimiz"),
+            ("processing", "process"),
+            ("running", "run"),  # "ning" suffix matches before "ing"
+            ("carefully", "careful"),
+            ("happiness", "happi"),
+            ("educational", "education"),
+            ("cats", "cat"),  # short 3-char stem after stripping "s"
+            ("dogs", "dog"),
+            ("maps", "map"),
+            ("runs", "run"),
+            ("items", "item"),
+            ("played", "play"),
+        ],
+    )
     def test_positive_pairs(self, stemmer, word, expected):
         assert stemmer.stem(word) == expected
 
-    @pytest.mark.parametrize("word", [
-        "an",    # too short
-        "go",    # too short
-        "cat",   # no matching suffix
-        "is",    # too short to strip "s"
-    ])
+    @pytest.mark.parametrize(
+        "word",
+        [
+            "an",  # too short
+            "go",  # too short
+            "cat",  # no matching suffix
+            "is",  # too short to strip "s"
+        ],
+    )
     def test_negative_pairs(self, stemmer, word):
         assert stemmer.stem(word) == word
 
@@ -77,11 +84,14 @@ class TestSpanishStemmer:
     def stemmer(self):
         return get_stemmer("es")
 
-    @pytest.mark.parametrize("word,expected", [
-        ("organizaciones", "organizacion"),
-        ("rápidamente", "rápida"),
-        ("habilidad", "habil"),
-    ])
+    @pytest.mark.parametrize(
+        "word,expected",
+        [
+            ("organizaciones", "organizacion"),
+            ("rápidamente", "rápida"),
+            ("habilidad", "habil"),
+        ],
+    )
     def test_positive_pairs(self, stemmer, word, expected):
         assert stemmer.stem(word) == expected
 
@@ -95,11 +105,14 @@ class TestGermanStemmer:
     def stemmer(self):
         return get_stemmer("de")
 
-    @pytest.mark.parametrize("word,expected", [
-        ("verarbeitung", "verarbeit"),
-        ("freundlichkeit", "freundlich"),
-        ("wissenschaftlich", "wissenschaft"),
-    ])
+    @pytest.mark.parametrize(
+        "word,expected",
+        [
+            ("verarbeitung", "verarbeit"),
+            ("freundlichkeit", "freundlich"),
+            ("wissenschaftlich", "wissenschaft"),
+        ],
+    )
     def test_positive_pairs(self, stemmer, word, expected):
         assert stemmer.stem(word) == expected
 
@@ -113,10 +126,13 @@ class TestFrenchStemmer:
     def stemmer(self):
         return get_stemmer("fr")
 
-    @pytest.mark.parametrize("word,expected", [
-        ("établissement", "établ"),
-        ("organisation", "organis"),
-    ])
+    @pytest.mark.parametrize(
+        "word,expected",
+        [
+            ("établissement", "établ"),
+            ("organisation", "organis"),
+        ],
+    )
     def test_positive_pairs(self, stemmer, word, expected):
         assert stemmer.stem(word) == expected
 
@@ -126,11 +142,14 @@ class TestRussianStemmer:
     def stemmer(self):
         return get_stemmer("ru")
 
-    @pytest.mark.parametrize("word,expected", [
-        ("обучение", "обуч"),
-        ("организации", "организаци"),
-        ("качество", "каче"),
-    ])
+    @pytest.mark.parametrize(
+        "word,expected",
+        [
+            ("обучение", "обуч"),
+            ("организации", "организаци"),
+            ("качество", "каче"),
+        ],
+    )
     def test_positive_pairs(self, stemmer, word, expected):
         assert stemmer.stem(word) == expected
 
@@ -144,10 +163,13 @@ class TestUkrainianStemmer:
     def stemmer(self):
         return get_stemmer("uk")
 
-    @pytest.mark.parametrize("word,expected", [
-        ("навчання", "навч"),
-        ("організація", "організац"),  # strips "ія" suffix
-    ])
+    @pytest.mark.parametrize(
+        "word,expected",
+        [
+            ("навчання", "навч"),
+            ("організація", "організац"),  # strips "ія" suffix
+        ],
+    )
     def test_positive_pairs(self, stemmer, word, expected):
         assert stemmer.stem(word) == expected
 

@@ -1,10 +1,11 @@
 """Tests for LangGraph pipeline nodes using a mocked LLM."""
+
 from __future__ import annotations
 
 import json
 import operator
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -34,7 +35,6 @@ from app.services.llm.prompts import (
     chunk_segments,
     format_transcript_with_timestamps,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -93,14 +93,24 @@ def _make_session():
 @pytest.mark.asyncio
 async def test_validate_input_passes_with_transcript():
     ts = _make_transcript_source("Some transcript text.")
-    state = {"transcript_source": ts, "errors": [], "run_id": 1, "session_factory": _make_session_factory()}
+    state = {
+        "transcript_source": ts,
+        "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
+    }
     result = await validate_input_node(state)
     assert result.get("pipeline_failed") is False
 
 
 @pytest.mark.asyncio
 async def test_validate_input_fails_without_transcript():
-    state = {"transcript_source": None, "errors": [], "run_id": 1, "session_factory": _make_session_factory()}
+    state = {
+        "transcript_source": None,
+        "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
+    }
     result = await validate_input_node(state)
     assert result.get("pipeline_failed") is True
     assert len(result.get("errors", [])) > 0
@@ -109,7 +119,12 @@ async def test_validate_input_fails_without_transcript():
 @pytest.mark.asyncio
 async def test_validate_input_fails_with_empty_transcript():
     ts = _make_transcript_source("   ")
-    state = {"transcript_source": ts, "errors": [], "run_id": 1, "session_factory": _make_session_factory()}
+    state = {
+        "transcript_source": ts,
+        "errors": [],
+        "run_id": 1,
+        "session_factory": _make_session_factory(),
+    }
     result = await validate_input_node(state)
     assert result.get("pipeline_failed") is True
 
@@ -190,7 +205,9 @@ async def test_extract_chapters_returns_result():
     )
     expected = ChapterListSchema(chapters=[ch])
     llm = _make_llm(expected)
-    ts = _make_transcript_source("Transcript.", segments=[{"text": "Hello", "start": 0, "duration": 5}])
+    ts = _make_transcript_source(
+        "Transcript.", segments=[{"text": "Hello", "start": 0, "duration": 5}]
+    )
     state = {
         "transcript_source": ts,
         "focus_prompt": None,
@@ -378,7 +395,10 @@ async def test_embed_transcript_returns_error_when_no_video_id():
     }
     result = await embed_transcript_node(state)
     assert result.get("embedding_error") is not None
-    assert "video_id" in result["embedding_error"].lower() or "resolve" in result["embedding_error"].lower()
+    assert (
+        "video_id" in result["embedding_error"].lower()
+        or "resolve" in result["embedding_error"].lower()
+    )
 
 
 @pytest.mark.asyncio
@@ -396,7 +416,10 @@ async def test_embed_transcript_returns_error_when_no_transcript():
     }
     result = await embed_transcript_node(state)
     assert result.get("embedding_error") is not None
-    assert "transcript" in result["embedding_error"].lower() or "no " in result["embedding_error"].lower()
+    assert (
+        "transcript" in result["embedding_error"].lower()
+        or "no " in result["embedding_error"].lower()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -702,16 +725,22 @@ def test_is_permanent_api_error_detects_invalid_key():
 
 def test_is_permanent_api_error_detects_google_invalid_key():
     # Google surfaces invalid API keys as 'api_key_invalid' in the error body
-    assert _is_permanent_api_error(
-        Exception("400 API key not valid. Please pass a valid API key. [api_key_invalid]")
-    ) is True
+    assert (
+        _is_permanent_api_error(
+            Exception("400 API key not valid. Please pass a valid API key. [api_key_invalid]")
+        )
+        is True
+    )
 
 
 def test_is_permanent_api_error_detects_anthropic_billing():
     # Anthropic surfaces billing exhaustion with this specific phrase
-    assert _is_permanent_api_error(
-        Exception("Your credit balance is too low to access the Anthropic API.")
-    ) is True
+    assert (
+        _is_permanent_api_error(
+            Exception("Your credit balance is too low to access the Anthropic API.")
+        )
+        is True
+    )
 
 
 def test_is_permanent_api_error_false_for_google_rate_limit():
@@ -740,9 +769,7 @@ def test_is_permanent_api_error_case_insensitive():
 @pytest.mark.asyncio
 async def test_invoke_quota_error_does_not_retry():
     """insufficient_quota breaks immediately without sleeping or retrying."""
-    quota_exc = Exception(
-        "Error code: 429 - {'error': {'code': 'insufficient_quota'}}"
-    )
+    quota_exc = Exception("Error code: 429 - {'error': {'code': 'insufficient_quota'}}")
     structured = MagicMock()
     structured.ainvoke = AsyncMock(side_effect=quota_exc)
     llm = MagicMock()
@@ -788,9 +815,7 @@ async def test_invoke_succeeds_on_second_attempt():
 
     expected = DummySchema(value="ok")
     structured = MagicMock()
-    structured.ainvoke = AsyncMock(
-        side_effect=[Exception("connection reset"), expected]
-    )
+    structured.ainvoke = AsyncMock(side_effect=[Exception("connection reset"), expected])
     llm = MagicMock()
     llm.with_structured_output = MagicMock(return_value=structured)
 
