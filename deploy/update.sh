@@ -72,7 +72,12 @@ deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
 consecutive=0
 last_status="000"
 while (( $(date +%s) < deadline )); do
-    last_status=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 2 "${HEALTH_URL}" || echo "000")
+    # curl writes "%{http_code}" (e.g. "000" on connect failure, "200" on a
+    # successful header exchange that then times out on the body) to stdout
+    # *before* exiting non-zero. Using `|| true` preserves that value;
+    # `|| echo "000"` would append and give us e.g. "000000" or "200000",
+    # which fails the regex below and causes false-negative health checks.
+    last_status=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 2 "${HEALTH_URL}" || true)
     if [[ "${last_status}" =~ ^[1-5][0-9][0-9]$ ]]; then
         consecutive=$(( consecutive + 1 ))
         if (( consecutive >= REQUIRED_SUCCESSES )); then
