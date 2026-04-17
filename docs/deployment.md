@@ -14,6 +14,7 @@ VidSense is designed to run on a single VM behind a TLS reverse proxy. The [`dep
 7. **Firewall** — allow ports **443** (and **80** for ACME). Restrict SSH source IPs, use key-only auth. Do not expose port 8000.
 8. **Non-root service user** — copy [`deploy/vidsense.service`](../deploy/vidsense.service) to `/etc/systemd/system/`, create a `vidsense` user, and adjust paths. See comments in the file.
 9. **File permissions** — `chmod 600 .env`; ensure `data/` is owned by the service user and not world-readable.
+10. **Cloud VMs only — transcript proxy** — YouTube blocks unauthenticated transcript requests from datacenter IP ranges. Set `WEBSHARE_PROXY_USERNAME` and `WEBSHARE_PROXY_PASSWORD` in `.env` to route fetches through a residential proxy. See [Transcript fetching on cloud VMs](#transcript-fetching-on-cloud-vms) below for setup instructions.
 
 ## Logging
 

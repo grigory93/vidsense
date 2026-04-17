@@ -60,6 +60,19 @@ With `APP_DEBUG=true` in `.env`, `python main.py` enables uvicorn reload when ru
 
 See also the **YouTube** block in [`.env.example`](./.env.example).
 
+### Transcript proxy (cloud VMs)
+
+On cloud VMs (AWS EC2, GCP, Azure, DigitalOcean, Hetzner, etc.) YouTube blocks unauthenticated transcript requests from datacenter IP ranges. The authenticated metadata and comments APIs that use `YOUTUBE_API_KEY` are not affected — only transcript fetching is blocked, which causes the whole ingestion pipeline to fail.
+
+To fix this, set two optional env vars to route transcript fetches through a [Webshare](https://www.webshare.io/) residential proxy:
+
+```bash
+WEBSHARE_PROXY_USERNAME=<from Webshare dashboard>
+WEBSHARE_PROXY_PASSWORD=<from Webshare dashboard>
+```
+
+Both vars are optional and **not needed for local development**. Setting exactly one triggers a clear startup error. See [Transcript fetching on cloud VMs](./docs/deployment.md#transcript-fetching-on-cloud-vms) in the deployment guide for which Webshare plan to buy, where to find the credentials, and how to verify the proxy before restarting the service.
+
 ---
 
 ## Development
