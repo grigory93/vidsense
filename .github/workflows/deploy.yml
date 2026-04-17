@@ -1,9 +1,14 @@
 name: Deploy
 
-# Manual dispatch only for now. Once the first dev deploy has been verified
-# end-to-end, a small follow-up PR will add `on: push: branches: [main]` here
-# to auto-deploy merged PRs to dev.
+# Triggers:
+#   - push to main: auto-deploy merged PRs to dev (the `ci` job below re-runs
+#     lint+tests on the merge commit as a last-mile gate before SSHing to the
+#     VM, since PR CI ran on the PR head, not on post-merge main).
+#   - workflow_dispatch: manual redeploy / ad-hoc branch deploy to dev. Useful
+#     for redeploying after a VM config change without forcing an empty commit.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
