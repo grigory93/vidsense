@@ -48,6 +48,49 @@ For programmatic API clients that need direct `/api` access without the proxy pa
 
 The sample Caddy config also includes a basic CSP, request-size limit, and upstream dial/header timeouts. Stock Caddy does not include rate limiting by default, so that is intentionally deferred for a later version.
 
+## Transcript fetching on cloud VMs
+
+YouTube blocks transcript requests from cloud-datacenter IP ranges (AWS, GCP, Azure, DigitalOcean, Hetzner, etc.). The metadata and comments APIs (authenticated with `YOUTUBE_API_KEY`) are unaffected — only the unauthenticated transcript endpoint is blocked. The fix is to route transcript requests through a residential proxy. **This is not needed for local development.**
+
+### Which Webshare plan to buy
+
+`youtube-transcript-api`'s built-in `WebshareProxyConfig` is designed for Webshare's **Residential** (rotating) proxy product. The free tier and the "Proxy Server" / "Static Residential" plans use datacenter IPs and will still be blocked by YouTube. Pricing starts around $3–6/month for the smallest residential tier. Sign up at [webshare.io](https://www.webshare.io/).
+
+### Where to find the credentials
+
+In the Webshare dashboard, navigate to **Proxy → Proxy Settings** (or **Residential → Settings**). Webshare issues a dedicated **Proxy Username** and **Proxy Password** per subaccount — these are *not* your Webshare login email and password. Copy both values verbatim.
+
+### What to put in `.env`
+
+Exactly two variables:
+
+```bash
+WEBSHARE_PROXY_USERNAME=<from Webshare dashboard>
+WEBSHARE_PROXY_PASSWORD=<from Webshare dashboard>
+```
+
+Endpoint defaults (`p.webshare.io:80`, rotation enabled) are applied automatically by `WebshareProxyConfig`. Do not override `domain_name` or `proxy_port` — doing so can silently route traffic through the wrong Webshare product.
+
+The app validates at startup that either both or neither of the two vars are set. Setting exactly one triggers a clear error.
+
+### Optional tuning (not wired, but the knobs exist)
+
+If you later want to constrain exit countries (some YouTube videos are geo-restricted) or tune retries, `WebshareProxyConfig` also accepts `filter_ip_locations=["US", "CA", "GB"]` and `retries_when_blocked=N` (default 10). Adding these is a one-line change in [`app/services/youtube.py`](../app/services/youtube.py).
+
+### How to verify before restart
+
+From the VM, confirm the proxy works independently of the app:
+
+```bash
+export WEBSHARE_PROXY_USERNAME='<from Webshare dashboard>'
+export WEBSHARE_PROXY_PASSWORD='<from Webshare dashboard>'
+curl --proxy-user "${WEBSHARE_PROXY_USERNAME}-rotate:${WEBSHARE_PROXY_PASSWORD}" \
+  -x http://p.webshare.io:80 \
+  https://api.ipify.org
+```
+
+A successful response prints a residential-looking IP that is *not* the VM's own IP. If `curl` hangs, returns a 407, or prints the VM's IP, the credentials or plan type are wrong — fix that before restarting the service.
+
 ## Deployment files
 
 | File | Purpose |

@@ -69,6 +69,13 @@
     'color': 'red',
     'recoverable': false,
   },
+  'TRANSCRIPT_IP_BLOCKED': {
+    'icon': 'ban',
+    'title': 'Transcript Temporarily Unavailable',
+    'hint': 'YouTube is blocking transcript requests from this server. The operator has been notified; please try again later.',
+    'color': 'amber',
+    'recoverable': true,
+  },
 } %}
 
 {% set cfg    = error_configs.get(error_code, {'icon': 'exclamation', 'title': 'Something Went Wrong', 'hint': '', 'color': 'red', 'recoverable': false}) %}

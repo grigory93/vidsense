@@ -1,6 +1,6 @@
 import json
 
-from pydantic import AliasChoices, Field, computed_field, field_validator
+from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_SECRET_KEY_PLACEHOLDER = "change-me-in-production"
@@ -107,8 +107,32 @@ class Settings(BaseSettings):
         description="Ranked language preference for transcript selection. First match wins.",
     )
 
+    # Webshare residential proxy (transcript fetching on cloud VMs)
+    webshare_proxy_username: str = Field(
+        default="",
+        description="Webshare proxy username. If set together with webshare_proxy_password, "
+        "transcript fetches route through Webshare residential proxies.",
+    )
+    webshare_proxy_password: str = Field(
+        default="",
+        description="Webshare proxy password. See webshare_proxy_username.",
+    )
+
     # LLM retry config
     llm_max_retries: int = Field(default=2)
+
+    @model_validator(mode="after")
+    def _validate_webshare_pair(self) -> "Settings":
+        has_user = bool(self.webshare_proxy_username)
+        has_pass = bool(self.webshare_proxy_password)
+        if has_user != has_pass:
+            set_var = "WEBSHARE_PROXY_USERNAME" if has_user else "WEBSHARE_PROXY_PASSWORD"
+            missing_var = "WEBSHARE_PROXY_PASSWORD" if has_user else "WEBSHARE_PROXY_USERNAME"
+            raise ValueError(
+                f"{set_var} is set but {missing_var} is empty. "
+                "Both must be set together, or both must be omitted."
+            )
+        return self
 
     @field_validator("allowed_hosts_raw", mode="before")
     @classmethod
@@ -118,6 +142,11 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value
         return str(value)
+
+    @computed_field
+    @property
+    def webshare_proxy_enabled(self) -> bool:
+        return bool(self.webshare_proxy_username and self.webshare_proxy_password)
 
     @computed_field
     @property
