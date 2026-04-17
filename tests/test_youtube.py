@@ -579,9 +579,13 @@ class TestAsyncOffload:
     async def test_fetch_transcript_runs_in_thread(self):
         with (
             patch("app.services.youtube.extract_video_id", return_value="FAKE_ID"),
-            patch("app.services.youtube._get_cached_video", new_callable=AsyncMock, return_value=None),
+            patch(
+                "app.services.youtube._get_cached_video", new_callable=AsyncMock, return_value=None
+            ),
             patch("app.services.youtube._fetch_metadata", new_callable=AsyncMock) as mock_meta,
-            patch("app.services.youtube.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
+            patch(
+                "app.services.youtube.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_to_thread,
         ):
             mock_meta.return_value = {
                 "title": "T",

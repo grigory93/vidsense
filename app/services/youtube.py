@@ -326,9 +326,7 @@ def _fetch_transcript(
         try:
             transcript = transcript_list.find_generated_transcript(_EN_CODES)
             segments = _to_segments(transcript)
-            logger.info(
-                "Selected transcript: lang=en, source=auto_generated, video=%s", video_id
-            )
+            logger.info("Selected transcript: lang=en, source=auto_generated, video=%s", video_id)
             return (segments, TranscriptSourceType.auto_generated, "en")
         except NoTranscriptFound:
             pass
@@ -360,9 +358,7 @@ def _fetch_transcript(
         for lang in pref_langs:
             if lang in manual_by_lang:
                 segments = _to_segments(manual_by_lang[lang])
-                logger.info(
-                    "Selected transcript: lang=%s, source=manual, video=%s", lang, video_id
-                )
+                logger.info("Selected transcript: lang=%s, source=manual, video=%s", lang, video_id)
                 return (segments, TranscriptSourceType.manual, lang)
 
         # Tier 4: auto-generated transcript in preferred language order
