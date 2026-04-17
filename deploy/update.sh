@@ -91,7 +91,14 @@ done
 
 if (( consecutive < REQUIRED_SUCCESSES )); then
     echo "[update] ERROR: ${SERVICE_NAME} did not stay healthy on ${HEALTH_URL} within ${HEALTH_TIMEOUT}s (last HTTP status: ${last_status})." >&2
+    # `systemctl status` shows the current unit state (e.g. "active (running)"
+    # during a crash loop where Restart=on-failure keeps respawning uvicorn).
+    # That's nearly useless for diagnosis — the actual Python traceback is in
+    # the journal. Dump both so the GitHub Actions log surfaces the root cause
+    # without requiring an SSH round-trip.
     systemctl status "${SERVICE_NAME}" --no-pager | head -n 40 >&2 || true
+    echo "[update] Last ${SERVICE_NAME} journal lines:" >&2
+    journalctl -u "${SERVICE_NAME}" -n 80 --no-pager >&2 || true
     exit 1
 fi
 

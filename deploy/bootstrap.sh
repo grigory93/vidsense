@@ -134,6 +134,18 @@ else
     fi
 fi
 
+# Grant read access to the system journal so deploy/update.sh (invoked via SSH
+# by the GitHub Actions deploy workflow) can dump recent unit logs on a failed
+# health probe without needing sudo. Without this membership, non-root users on
+# Ubuntu can only read their own user-scoped journals, so `journalctl -u
+# vidsense` prints nothing useful from the CI log.
+if id -nG "${SERVICE_USER}" | tr ' ' '\n' | grep -qx systemd-journal; then
+    info "User '${SERVICE_USER}' is already in systemd-journal group, skipping."
+else
+    info "Adding '${SERVICE_USER}' to systemd-journal group for diagnostic journalctl access..."
+    usermod -aG systemd-journal "${SERVICE_USER}"
+fi
+
 # ---------------------------------------------------------------------------
 # 5. Clone or update the repository
 # ---------------------------------------------------------------------------
