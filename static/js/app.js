@@ -446,7 +446,7 @@ function vsMindMap() {
         }},
         { selector: 'edge', style: {
           'label': 'data(label)', 'font-size': '9px',
-          'color': dark ? '#94a3b8' : '#94a3b8',
+          'color': dark ? '#94a3b8' : '#64748b',
           'line-color': dark ? '#64748b' : '#cbd5e1',
           'target-arrow-color': dark ? '#64748b' : '#cbd5e1',
           'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
