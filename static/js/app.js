@@ -1,7 +1,7 @@
 /**
  * VidSense — shell-level UI helpers
  * Player-specific logic lives in player.js
- * Theme API (vsGetThemePreference, vsSetThemePreference, vsOnThemeChange, …)
+ * Theme API (vsGetThemePreference, vsSetThemePreference, vsOnThemeChange, vsOffThemeChange, …)
  * is defined inline in base.html <head> so it's available before Alpine inits.
  */
 
@@ -404,15 +404,33 @@ function vsMindMap() {
     searchQuery: '',
     searchResults: [],
     showDropdown: false,
+    _vsThemeListener: null,
+    _vsMindMapRenderBridge: null,
     init() {
       var self = this;
-      window.__vsMindMapRender = () => this._renderMindMap();
+      this._vsMindMapRenderBridge = function () { self._renderMindMap(); };
+      window.__vsMindMapRender = this._vsMindMapRenderBridge;
       this.$nextTick(() => {
         requestAnimationFrame(() => {
           if (window.__vsActiveView === 'mind_map') this._renderMindMap();
         });
       });
-      window.vsOnThemeChange(function () { self._applyThemeStyles(); });
+      this._vsThemeListener = function () { self._applyThemeStyles(); };
+      window.vsOnThemeChange(this._vsThemeListener);
+    },
+    destroy() {
+      if (this._vsThemeListener && typeof window.vsOffThemeChange === 'function') {
+        window.vsOffThemeChange(this._vsThemeListener);
+      }
+      this._vsThemeListener = null;
+      if (this._vsMindMapRenderBridge && window.__vsMindMapRender === this._vsMindMapRenderBridge) {
+        delete window.__vsMindMapRender;
+      }
+      this._vsMindMapRenderBridge = null;
+      if (this.cy) {
+        try { this.cy.destroy(); } catch (e) { /* ignore */ }
+        this.cy = null;
+      }
     },
     _isDark() {
       return document.documentElement.classList.contains('dark');
