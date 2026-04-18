@@ -407,6 +407,100 @@
    Reduced motion
    ============================================================ */
 
+/* ============================================================
+   Dark mode overrides (html.dark)
+   ============================================================ */
+
+/* Markdown rendered content */
+html.dark .vs-qa-md code {
+  background: rgba(248, 250, 252, 0.08);
+}
+html.dark .vs-qa-md pre {
+  background: rgba(248, 250, 252, 0.06);
+}
+html.dark .vs-qa-md blockquote {
+  border-left-color: #475569;
+  color: #94a3b8;
+}
+html.dark .vs-qa-md a { color: #38bdf8; }
+html.dark .vs-qa-md a:hover { color: #7dd3fc; }
+html.dark .vs-qa-md hr { border-top-color: #334155; }
+html.dark .vs-qa-md th, html.dark .vs-qa-md td {
+  border-color: #334155;
+}
+html.dark .vs-qa-md th { background: #1e293b; }
+
+/* Skeleton shimmer */
+html.dark .skeleton {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 200% 100%;
+}
+
+/* Toast notifications */
+html.dark .vs-toast-success { background: #f8fafc; color: #0f172a; }
+html.dark .vs-toast-error   { background: #450a0a; color: #fca5a5; border-color: #7f1d1d; }
+html.dark .vs-toast-info    { background: #172554; color: #93c5fd; border-color: #1e3a5f; }
+
+/* Chapter cards */
+html.dark .chapter-card:hover {
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+html.dark .chapter-card.is-active-chapter {
+  border-left-color: #38bdf8 !important;
+  background-color: #0c4a6e20;
+}
+
+/* Summary depth selector cards */
+html.dark .summary-depth-card:hover {
+  border-color: #0369a1;
+}
+html.dark .summary-depth-card.is-active {
+  border-color: #38bdf8;
+  background-color: #0c4a6e20;
+  box-shadow: 0 0 0 2px #0369a180;
+}
+
+/* Timeline bar */
+html.dark .vs-timeline { background: #334155; }
+
+/* Scrollbars */
+html.dark .vs-content-panel { scrollbar-color: #475569 transparent; }
+html.dark .vs-content-panel::-webkit-scrollbar-thumb { background-color: #475569; }
+html.dark #vs-player-panel { scrollbar-color: #334155 transparent; }
+html.dark .summary-content-container { border-bottom-color: #1e293b; scrollbar-color: #475569 transparent; }
+html.dark .summary-content-container::-webkit-scrollbar-thumb { background-color: #475569; }
+
+/* Video metadata section */
+html.dark .vs-metadata-section { border-top-color: #1e293b; }
+
+/* Chapter summary */
+html.dark .vs-chapter-summary { color: #94a3b8; }
+
+/* Active outline bullet */
+html.dark .outline-point.is-active-bullet { background-color: #0c4a6e20; }
+html.dark .outline-point.is-active-bullet .outline-point-badge {
+  background-color: #38bdf8;
+  border-color: #38bdf8;
+  color: #0f172a;
+}
+html.dark .outline-point.is-active-bullet .outline-point-text {
+  color: #e0f2fe;
+}
+html.dark .outline-point.is-active-bullet .vs-outline-point-ts {
+  color: #38bdf8;
+}
+
+/* Timestamp chip */
+html.dark .vs-outline-point-ts { color: #64748b; }
+html.dark .vs-outline-point-ts:hover { color: #38bdf8; }
+
+/* Chapter card header focus */
+html.dark .chapter-card-header:focus-visible { outline-color: #0284c7; }
+
+/* ============================================================
+   Reduced motion
+   ============================================================ */
+
 @media (prefers-reduced-motion: reduce) {
   .vs-fade-in,
   .vs-entrance,

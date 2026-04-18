@@ -46,6 +46,17 @@ async def index(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+
+
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    templates = get_templates(request)
+    return templates.TemplateResponse(request, "settings.html")
+
+
+# ---------------------------------------------------------------------------
 # Video / Read screen
 # ---------------------------------------------------------------------------
 

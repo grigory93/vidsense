@@ -31,7 +31,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
         </svg>
       </div>
-      <span class="text-xs text-slate-500 font-medium">Transcript</span>
+      <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">Transcript</span>
     </div>
 
     <div class="flex-1 h-px bg-brand-200 max-w-[2.5rem]"></div>
@@ -39,7 +39,7 @@
     <!-- Step 2: Generating -->
     <div class="flex items-center gap-1.5">
       <div class="w-5 h-5 rounded-full flex items-center justify-center shrink-0
-                  {% if summaries_done and chapters_done %}bg-brand-500{% else %}border-2 border-brand-500 bg-white{% endif %}">
+                  {% if summaries_done and chapters_done %}bg-brand-500{% else %}border-2 border-brand-500 bg-white dark:bg-slate-900{% endif %}">
         {% if summaries_done and chapters_done %}
         <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
           <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
@@ -55,7 +55,7 @@
 
     <!-- Step 3: Saving -->
     <div class="flex items-center gap-1.5">
-      <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0
+      <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 dark:bg-slate-900
                   {% if is_persisting %}border-brand-500 bg-white{% else %}border-slate-200 bg-white{% endif %}">
         <div class="w-2 h-2 rounded-full {% if is_persisting %}bg-brand-500 animate-pulse{% else %}bg-slate-200{% endif %}"></div>
       </div>
@@ -65,9 +65,9 @@
   </div>
 
   <!-- Estimated time + elapsed + chunk progress -->
-  <div class="mb-6 flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+  <div class="mb-6 flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400 dark:text-slate-500">
     <span>
-      <span class="font-medium text-slate-500">{{ est_label }}</span>
+      <span class="font-medium text-slate-500 dark:text-slate-400">{{ est_label }}</span>
       <span class="ml-1">·</span>
     </span>
     <span x-text="elapsedLabel" class="tabular-nums"></span>
@@ -101,9 +101,9 @@
        }"
        x-init="activeTab = (window.__vsSummaryTab || 'thesis'); $watch('activeTab', v => window.__vsSummaryTab = v)">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-xl font-bold text-slate-900">Summary</h2>
+      <h2 class="text-xl font-bold text-slate-900 dark:text-slate-100">Summary</h2>
       <button @click="copyActive()"
-              class="flex items-center gap-1.5 text-xs text-slate-400 hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 rounded px-2 py-1"
+              class="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-400 rounded px-2 py-1"
               title="Copy active summary to clipboard">
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -116,42 +116,42 @@
     <div class="grid grid-cols-3 gap-2 mb-5" role="tablist">
       <button role="tab" :aria-selected="activeTab === 'thesis'" @click="activeTab = 'thesis'"
               class="summary-depth-card border rounded-xl p-3 text-left focus:outline-none focus:ring-2 focus:ring-brand-400"
-              :class="activeTab === 'thesis' ? 'is-active' : 'border-slate-200 bg-white hover:border-brand-300'">
+              :class="activeTab === 'thesis' ? 'is-active' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-brand-300 dark:hover:border-brand-500'">
         <div class="flex items-center gap-1.5 mb-1.5">
           <div class="flex gap-0.5">
-            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'thesis' ? 'bg-brand-500' : 'bg-slate-300'"></span>
-            <span class="w-1.5 h-3 rounded-sm bg-slate-200"></span>
-            <span class="w-1.5 h-3 rounded-sm bg-slate-200"></span>
+            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'thesis' ? 'bg-brand-500' : 'bg-slate-300 dark:bg-slate-600'"></span>
+            <span class="w-1.5 h-3 rounded-sm bg-slate-200 dark:bg-slate-700"></span>
+            <span class="w-1.5 h-3 rounded-sm bg-slate-200 dark:bg-slate-700"></span>
           </div>
         </div>
-        <p class="text-xs font-bold" :class="activeTab === 'thesis' ? 'text-brand-700' : 'text-slate-700'">Quick Take</p>
-        <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'thesis' ? 'text-brand-600' : 'text-slate-400'">1–2 sentence core insight · ~10 sec read</p>
+        <p class="text-xs font-bold" :class="activeTab === 'thesis' ? 'text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-200'">Quick Take</p>
+        <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'thesis' ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'">1–2 sentence core insight · ~10 sec read</p>
       </button>
       <button role="tab" :aria-selected="activeTab === 'executive'" @click="activeTab = 'executive'"
               class="summary-depth-card border rounded-xl p-3 text-left focus:outline-none focus:ring-2 focus:ring-brand-400"
-              :class="activeTab === 'executive' ? 'is-active' : 'border-slate-200 bg-white hover:border-brand-300'">
+              :class="activeTab === 'executive' ? 'is-active' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-brand-300 dark:hover:border-brand-500'">
         <div class="flex items-center gap-1.5 mb-1.5">
           <div class="flex gap-0.5">
-            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'executive' ? 'bg-brand-500' : 'bg-slate-300'"></span>
-            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'executive' ? 'bg-brand-400' : 'bg-slate-200'"></span>
-            <span class="w-1.5 h-3 rounded-sm bg-slate-200"></span>
+            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'executive' ? 'bg-brand-500' : 'bg-slate-300 dark:bg-slate-600'"></span>
+            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'executive' ? 'bg-brand-400' : 'bg-slate-200 dark:bg-slate-700'"></span>
+            <span class="w-1.5 h-3 rounded-sm bg-slate-200 dark:bg-slate-700"></span>
           </div>
         </div>
-        <p class="text-xs font-bold" :class="activeTab === 'executive' ? 'text-brand-700' : 'text-slate-700'">Executive</p>
-        <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'executive' ? 'text-brand-600' : 'text-slate-400'">Full narrative context · ~1–2 min read</p>
+        <p class="text-xs font-bold" :class="activeTab === 'executive' ? 'text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-200'">Executive</p>
+        <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'executive' ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'">Full narrative context · ~1–2 min read</p>
       </button>
       <button role="tab" :aria-selected="activeTab === 'detailed'" @click="activeTab = 'detailed'"
               class="summary-depth-card border rounded-xl p-3 text-left focus:outline-none focus:ring-2 focus:ring-brand-400"
-              :class="activeTab === 'detailed' ? 'is-active' : 'border-slate-200 bg-white hover:border-brand-300'">
+              :class="activeTab === 'detailed' ? 'is-active' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-brand-300 dark:hover:border-brand-500'">
         <div class="flex items-center gap-1.5 mb-1.5">
           <div class="flex gap-0.5">
-            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-500' : 'bg-slate-300'"></span>
-            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-400' : 'bg-slate-200'"></span>
-            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-300' : 'bg-slate-200'"></span>
+            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-500' : 'bg-slate-300 dark:bg-slate-600'"></span>
+            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-400' : 'bg-slate-200 dark:bg-slate-700'"></span>
+            <span class="w-1.5 h-3 rounded-sm" :class="activeTab === 'detailed' ? 'bg-brand-300' : 'bg-slate-200 dark:bg-slate-700'"></span>
           </div>
         </div>
-        <p class="text-xs font-bold" :class="activeTab === 'detailed' ? 'text-brand-700' : 'text-slate-700'">Detailed Outline</p>
-        <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'detailed' ? 'text-brand-600' : 'text-slate-400'">Every point covered · scannable list</p>
+        <p class="text-xs font-bold" :class="activeTab === 'detailed' ? 'text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-200'">Detailed Outline</p>
+        <p class="text-xs mt-0.5 leading-snug" :class="activeTab === 'detailed' ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'">Every point covered · scannable list</p>
       </button>
     </div>
 
@@ -165,7 +165,7 @@
         {% if interim_summaries.thesis %}
         <div id="summary-text-thesis" class="relative">
           <div class="absolute left-0 top-0 bottom-0 w-1 bg-brand-400 rounded-full"></div>
-          <blockquote class="pl-5 text-slate-800 text-base leading-relaxed font-medium">{{ interim_summaries.thesis.content_text }}</blockquote>
+          <blockquote class="pl-5 text-slate-800 dark:text-slate-200 text-base leading-relaxed font-medium">{{ interim_summaries.thesis.content_text }}</blockquote>
         </div>
         {% endif %}
       </div>
@@ -178,7 +178,7 @@
         <div id="summary-text-executive">
           {% for para in interim_summaries.executive.content_text.split('\n\n') %}
           {% if para.strip() %}
-          <p class="text-slate-700 leading-relaxed mb-3 text-sm">{{ para.strip() }}</p>
+          <p class="text-slate-700 dark:text-slate-300 leading-relaxed mb-3 text-sm">{{ para.strip() }}</p>
           {% endif %}
           {% endfor %}
         </div>
@@ -193,7 +193,7 @@
         <ol id="summary-text-detailed" class="space-y-2">
           {% if interim_summaries.detailed.content_json %}
             {% for point in interim_summaries.detailed.content_json %}
-            <li class="flex items-start gap-3 text-slate-700 text-sm leading-relaxed">
+            <li class="flex items-start gap-3 text-slate-700 dark:text-slate-300 text-sm leading-relaxed">
               <span class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{{ loop.index }}</span>
               <span>{{ point }}</span>
             </li>
@@ -201,7 +201,7 @@
           {% else %}
             {% for line in interim_summaries.detailed.content_text.split('\n') %}
             {% if line.strip() %}
-            <li class="flex items-start gap-3 text-slate-700 text-sm leading-relaxed">
+            <li class="flex items-start gap-3 text-slate-700 dark:text-slate-300 text-sm leading-relaxed">
               <span class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{{ loop.index }}</span>
               <span>{{ line.lstrip('•-*0123456789. ') }}</span>
             </li>
@@ -219,7 +219,7 @@
   <div class="mb-8">
     <div class="flex items-center gap-2 mb-4">
       <div class="skeleton w-24 h-6 rounded-md"></div>
-      <span class="text-xs text-slate-400 animate-pulse">Generating summary…</span>
+      <span class="text-xs text-slate-400 dark:text-slate-500 animate-pulse">Generating summary…</span>
     </div>
     <div class="grid grid-cols-3 gap-2 mb-5">
       <div class="skeleton h-[68px] rounded-xl"></div>
@@ -244,9 +244,9 @@
   <!-- Real chapters (may be partial / still accumulating) -->
   <div id="chapters-section" x-data="{ allExpanded: false }">
     <div class="flex items-center justify-between mb-3">
-      <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+      <h2 class="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
         Chapters
-        <span class="text-sm font-normal text-slate-400">({{ interim_chapters | length }})</span>
+        <span class="text-sm font-normal text-slate-400 dark:text-slate-500">({{ interim_chapters | length }})</span>
         <span class="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 animate-pulse">
           <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
@@ -255,7 +255,7 @@
         </span>
       </h2>
       <button @click="allExpanded = !allExpanded"
-              class="text-xs text-slate-400 hover:text-brand-600 transition-colors focus:outline-none">
+              class="text-xs text-slate-400 dark:text-slate-500 hover:text-brand-600 transition-colors focus:outline-none">
         <span x-text="allExpanded ? 'Collapse all' : 'Expand all'"></span>
       </button>
     </div>
@@ -278,7 +278,7 @@
              aria-label="Jump to chapter {{ loop.index }}: {{ chapter.title }}"></div>
         {% endfor %}
       </div>
-      <div class="flex justify-between text-xs text-slate-400 px-0.5">
+      <div class="flex justify-between text-xs text-slate-400 dark:text-slate-500 px-0.5">
         <span>0:00</span>
         {% if video and video.duration_sec %}
         <span>{{ (video.duration_sec // 60) }}:{{ '%02d' % (video.duration_sec % 60) }}</span>
@@ -300,12 +300,12 @@
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-2">
         <div class="skeleton w-28 h-6 rounded-md"></div>
-        <span class="text-xs text-slate-400 animate-pulse">Extracting chapters…</span>
+        <span class="text-xs text-slate-400 dark:text-slate-500 animate-pulse">Extracting chapters…</span>
       </div>
     </div>
     <div class="skeleton h-[6px] w-full rounded-full mb-5"></div>
     {% for i in range(4) %}
-    <div class="border border-slate-100 rounded-xl bg-white p-4 mb-3">
+    <div class="border border-slate-100 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 p-4 mb-3">
       <div class="flex items-start gap-3">
         <div class="skeleton w-4 h-4 rounded"></div>
         <div class="skeleton w-10 h-6 rounded-md"></div>
