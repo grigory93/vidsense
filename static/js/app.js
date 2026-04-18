@@ -1,7 +1,10 @@
 /**
  * VidSense — shell-level UI helpers
  * Player-specific logic lives in player.js
+ * Theme API (vsGetThemePreference, vsSetThemePreference, vsOnThemeChange, vsOffThemeChange, …)
+ * is defined inline in base.html <head> so it's available before Alpine inits.
  */
+
 (function () {
   'use strict';
 
@@ -401,13 +404,89 @@ function vsMindMap() {
     searchQuery: '',
     searchResults: [],
     showDropdown: false,
+    _vsThemeListener: null,
+    _vsMindMapRenderBridge: null,
     init() {
-      window.__vsMindMapRender = () => this._renderMindMap();
+      var self = this;
+      this._vsMindMapRenderBridge = function () { self._renderMindMap(); };
+      window.__vsMindMapRender = this._vsMindMapRenderBridge;
       this.$nextTick(() => {
         requestAnimationFrame(() => {
           if (window.__vsActiveView === 'mind_map') this._renderMindMap();
         });
       });
+      this._vsThemeListener = function () { self._applyThemeStyles(); };
+      window.vsOnThemeChange(this._vsThemeListener);
+    },
+    destroy() {
+      if (this._vsThemeListener && typeof window.vsOffThemeChange === 'function') {
+        window.vsOffThemeChange(this._vsThemeListener);
+      }
+      this._vsThemeListener = null;
+      if (this._vsMindMapRenderBridge && window.__vsMindMapRender === this._vsMindMapRenderBridge) {
+        delete window.__vsMindMapRender;
+      }
+      this._vsMindMapRenderBridge = null;
+      if (this.cy) {
+        try { this.cy.destroy(); } catch (e) { /* ignore */ }
+        this.cy = null;
+      }
+    },
+    _isDark() {
+      return document.documentElement.classList.contains('dark');
+    },
+    _themeStyles() {
+      var dark = this._isDark();
+      // Per-theme type palette. Light: saturated 600-weight; dark: slightly
+      // desaturated 500-weight to sit more comfortably on slate-900.
+      var palette = dark ? {
+        concept: '#3b82f6', person: '#22c55e', technology: '#a855f7',
+        event: '#f97316', theory: '#06b6d4', methodology: '#d946ef',
+        _default: '#64748b'
+      } : {
+        concept: '#2563eb', person: '#16a34a', technology: '#9333ea',
+        event: '#ea580c', theory: '#0891b2', methodology: '#d946ef',
+        _default: '#64748b'
+      };
+      var base = [
+        { selector: 'node', style: {
+          'label': 'data(label)',
+          'background-color': palette._default,
+          'color': dark ? '#f1f5f9' : '#334155',
+          'text-outline-width': dark ? 2 : 0,
+          'text-outline-color': dark ? '#0f172a' : '#ffffff',
+          'text-outline-opacity': dark ? 0.85 : 0,
+          'font-size': '11px', 'text-valign': 'bottom',
+          'text-margin-y': 6, 'width': 32, 'height': 32,
+          'border-width': 2,
+          'border-color': dark ? '#0f172a' : '#e2e8f0',
+          'cursor': 'pointer'
+        }},
+        { selector: 'edge', style: {
+          'label': 'data(label)', 'font-size': '9px',
+          'color': dark ? '#94a3b8' : '#64748b',
+          'line-color': dark ? '#64748b' : '#cbd5e1',
+          'target-arrow-color': dark ? '#64748b' : '#cbd5e1',
+          'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
+          'width': 1.5
+        }},
+        { selector: 'node:selected', style: {
+          'border-color': dark ? '#38bdf8' : '#2563eb', 'border-width': 3
+        }}
+      ];
+      // Per-type overrides so colors adapt to theme.
+      Object.keys(palette).forEach(function (type) {
+        if (type === '_default') return;
+        base.push({
+          selector: 'node[type="' + type + '"]',
+          style: { 'background-color': palette[type] }
+        });
+      });
+      return base;
+    },
+    _applyThemeStyles() {
+      if (!this.cy) return;
+      this.cy.style(this._themeStyles());
     },
     onSearch() {
       var q = this.searchQuery.trim().toLowerCase();
@@ -479,11 +558,6 @@ function vsMindMap() {
         var data;
         try { data = JSON.parse(dataEl.textContent); } catch (e) { return; }
 
-        var typeColors = {
-          concept: '#2563eb', person: '#16a34a', technology: '#9333ea',
-          event: '#ea580c', theory: '#0891b2', methodology: '#d946ef'
-        };
-
         var elements = [];
         (data.nodes || []).forEach(function (n) {
           var id = n.node_id || n.id;
@@ -494,8 +568,7 @@ function vsMindMap() {
               label: n.label || id,
               type: n.type || 'concept',
               description: n.description || '',
-              chapter_ids: n.chapter_ids || [],
-              color: typeColors[n.type] || '#64748b'
+              chapter_ids: n.chapter_ids || []
             }
           });
         });
@@ -520,24 +593,7 @@ function vsMindMap() {
         self.cy = cytoscape({
           container: container,
           elements: elements,
-          style: [
-            { selector: 'node', style: {
-              'label': 'data(label)', 'background-color': 'data(color)',
-              'color': '#334155', 'font-size': '11px', 'text-valign': 'bottom',
-              'text-margin-y': 6, 'width': 32, 'height': 32,
-              'border-width': 2, 'border-color': '#e2e8f0',
-              'cursor': 'pointer'
-            }},
-            { selector: 'edge', style: {
-              'label': 'data(label)', 'font-size': '9px', 'color': '#94a3b8',
-              'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1',
-              'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
-              'width': 1.5
-            }},
-            { selector: 'node:selected', style: {
-              'border-color': '#2563eb', 'border-width': 3
-            }}
-          ],
+          style: self._themeStyles(),
           layout: { name: 'cose', animate: true, animationDuration: 500, nodeRepulsion: 8000 }
         });
         self.cy.fit(undefined, 48);
@@ -564,13 +620,18 @@ function vsMindMap() {
           var ids = d.chapter_ids || [];
           if (ids.length) {
             var heading = document.createElement('span');
-            heading.className = 'w-full text-xs text-slate-400 mb-1';
+            heading.className =
+              'w-full text-xs mb-1 text-slate-400 dark:text-slate-500';
             heading.textContent = 'Appears in:';
             chipsEl.appendChild(heading);
             ids.forEach(function (cid) {
               var ch = chapterIndex[cid];
               var btn = document.createElement('button');
-              btn.className = 'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 transition-colors';
+              btn.className =
+                'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md ' +
+                'bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 ' +
+                'dark:bg-brand-900/30 dark:border-brand-700 dark:text-brand-300 dark:hover:bg-brand-900/50 ' +
+                'transition-colors';
               if (ch) {
                 btn.textContent = ch.start_display + ' ' + ch.title;
                 btn.onclick = function () {
