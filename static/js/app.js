@@ -610,7 +610,6 @@ function vsMindMap() {
         } catch (e) {}
 
         self._showNodeDetail = function (d) {
-          var dark = self._isDark();
           var detail = document.getElementById('vs-mind-map-detail');
           document.getElementById('vs-mm-detail-label').textContent = d.label || '';
           document.getElementById('vs-mm-detail-type').textContent = d.type || '';
@@ -621,15 +620,18 @@ function vsMindMap() {
           var ids = d.chapter_ids || [];
           if (ids.length) {
             var heading = document.createElement('span');
-            heading.className = 'w-full text-xs mb-1 ' + (dark ? 'text-slate-500' : 'text-slate-400');
+            heading.className =
+              'w-full text-xs mb-1 text-slate-400 dark:text-slate-500';
             heading.textContent = 'Appears in:';
             chipsEl.appendChild(heading);
             ids.forEach(function (cid) {
               var ch = chapterIndex[cid];
               var btn = document.createElement('button');
-              btn.className = dark
-                ? 'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-brand-900/30 border border-brand-700 text-brand-300 hover:bg-brand-900/50 transition-colors'
-                : 'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 transition-colors';
+              btn.className =
+                'inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md ' +
+                'bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 ' +
+                'dark:bg-brand-900/30 dark:border-brand-700 dark:text-brand-300 dark:hover:bg-brand-900/50 ' +
+                'transition-colors';
               if (ch) {
                 btn.textContent = ch.start_display + ' ' + ch.title;
                 btn.onclick = function () {
