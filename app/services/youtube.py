@@ -11,6 +11,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -21,11 +22,14 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from youtube_transcript_api import (
+    IpBlocked,
     NoTranscriptFound,
+    RequestBlocked,
     TranscriptsDisabled,
     YouTubeTranscriptApi,
 )
 from youtube_transcript_api._errors import VideoUnavailable
+from youtube_transcript_api.proxies import WebshareProxyConfig
 
 from app.config import settings
 from app.lang import normalize_language_code
@@ -268,6 +272,18 @@ async def _fetch_top_comments(video_id: str) -> list[dict[str, str]] | None:
 # ---------------------------------------------------------------------------
 
 
+def _build_transcript_api() -> YouTubeTranscriptApi:
+    """Return a YouTubeTranscriptApi, routed through Webshare if credentials are configured."""
+    if settings.webshare_proxy_enabled:
+        return YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username=settings.webshare_proxy_username,
+                proxy_password=settings.webshare_proxy_password,
+            )
+        )
+    return YouTubeTranscriptApi()
+
+
 def _fetch_transcript(
     video_id: str,
 ) -> tuple[list[dict], TranscriptSourceType, str] | IngestionError:
@@ -281,9 +297,106 @@ def _fetch_transcript(
       3. Manual transcript in a supported language (settings.supported_languages order)
       4. Auto-generated transcript in a supported language (same order)
     Falls through to the first available language if none of the above match.
+
+    The outer try/except covers the entire flow — including transcript.fetch()
+    calls inside _to_segments — so IP-block exceptions are caught regardless
+    of which network phase raises them.
     """
     try:
-        transcript_list = YouTubeTranscriptApi().list(video_id)
+        transcript_list = _build_transcript_api().list(video_id)
+
+        def _to_segments(transcript) -> list[dict]:
+            return [
+                {"text": s.text, "start": s.start, "duration": s.duration}
+                for s in transcript.fetch()
+            ]
+
+        _EN_CODES = ["en", "en-US", "en-GB"]
+
+        # Tier 1: manual English
+        try:
+            transcript = transcript_list.find_manually_created_transcript(_EN_CODES)
+            segments = _to_segments(transcript)
+            logger.info("Selected transcript: lang=en, source=manual, video=%s", video_id)
+            return (segments, TranscriptSourceType.manual, "en")
+        except NoTranscriptFound:
+            pass
+
+        # Tier 2: auto-generated English
+        try:
+            transcript = transcript_list.find_generated_transcript(_EN_CODES)
+            segments = _to_segments(transcript)
+            logger.info("Selected transcript: lang=en, source=auto_generated, video=%s", video_id)
+            return (segments, TranscriptSourceType.auto_generated, "en")
+        except NoTranscriptFound:
+            pass
+
+        # Build lookup tables for tiers 3-4
+        try:
+            available = list(transcript_list)
+        except Exception:
+            available = []
+
+        if not available:
+            return IngestionError(
+                error_code="NO_TRANSCRIPT",
+                message="No transcript or caption source is available for this video.",
+            )
+
+        manual_by_lang: dict[str, object] = {}
+        generated_by_lang: dict[str, object] = {}
+        for t in available:
+            lang = normalize_language_code(t.language_code)
+            if t.is_generated:
+                generated_by_lang.setdefault(lang, t)
+            else:
+                manual_by_lang.setdefault(lang, t)
+
+        pref_langs = [normalize_language_code(lc) for lc in settings.supported_languages]
+
+        # Tier 3: manual transcript in preferred language order
+        for lang in pref_langs:
+            if lang in manual_by_lang:
+                segments = _to_segments(manual_by_lang[lang])
+                logger.info("Selected transcript: lang=%s, source=manual, video=%s", lang, video_id)
+                return (segments, TranscriptSourceType.manual, lang)
+
+        # Tier 4: auto-generated transcript in preferred language order
+        for lang in pref_langs:
+            if lang in generated_by_lang:
+                segments = _to_segments(generated_by_lang[lang])
+                logger.info(
+                    "Selected transcript: lang=%s, source=auto_generated, video=%s",
+                    lang,
+                    video_id,
+                )
+                return (segments, TranscriptSourceType.auto_generated, lang)
+
+        # Fallback: first available manual, then generated
+        if manual_by_lang:
+            lang, t = next(iter(manual_by_lang.items()))
+            segments = _to_segments(t)
+            logger.info(
+                "Selected transcript: lang=%s, source=manual (fallback), video=%s",
+                lang,
+                video_id,
+            )
+            return (segments, TranscriptSourceType.manual, lang)
+        if generated_by_lang:
+            lang, t = next(iter(generated_by_lang.items()))
+            segments = _to_segments(t)
+            logger.info(
+                "Selected transcript: lang=%s, source=auto_generated (fallback), video=%s",
+                lang,
+                video_id,
+            )
+            return (segments, TranscriptSourceType.auto_generated, lang)
+
+        return IngestionError(
+            error_code="NO_TRANSCRIPT",
+            message="No transcript or caption source is available for this video.",
+        )
+
     except TranscriptsDisabled:
         return IngestionError(
             error_code="TRANSCRIPTS_DISABLED",
@@ -294,99 +407,22 @@ def _fetch_transcript(
             error_code="VIDEO_UNAVAILABLE",
             message="This video is unavailable or private.",
         )
+    except (RequestBlocked, IpBlocked):
+        return IngestionError(
+            error_code="TRANSCRIPT_IP_BLOCKED",
+            message=(
+                "YouTube is blocking transcript requests from this server's IP. "
+                "This typically happens on cloud VMs. Configure a residential proxy "
+                "via WEBSHARE_PROXY_USERNAME / WEBSHARE_PROXY_PASSWORD."
+            ),
+            recoverable=True,
+        )
     except Exception as exc:
         return IngestionError(
             error_code="TRANSCRIPT_FETCH_FAILED",
             message=f"Could not fetch transcript: {exc}",
             recoverable=True,
         )
-
-    def _to_segments(transcript) -> list[dict]:
-        return [
-            {"text": s.text, "start": s.start, "duration": s.duration} for s in transcript.fetch()
-        ]
-
-    _EN_CODES = ["en", "en-US", "en-GB"]
-
-    # Tier 1: manual English
-    try:
-        transcript = transcript_list.find_manually_created_transcript(_EN_CODES)
-        segments = _to_segments(transcript)
-        logger.info("Selected transcript: lang=en, source=manual, video=%s", video_id)
-        return (segments, TranscriptSourceType.manual, "en")
-    except NoTranscriptFound:
-        pass
-
-    # Tier 2: auto-generated English
-    try:
-        transcript = transcript_list.find_generated_transcript(_EN_CODES)
-        segments = _to_segments(transcript)
-        logger.info("Selected transcript: lang=en, source=auto_generated, video=%s", video_id)
-        return (segments, TranscriptSourceType.auto_generated, "en")
-    except NoTranscriptFound:
-        pass
-
-    # Build lookup tables for tiers 3-4
-    try:
-        available = list(transcript_list)
-    except Exception:
-        available = []
-
-    if not available:
-        return IngestionError(
-            error_code="NO_TRANSCRIPT",
-            message="No transcript or caption source is available for this video.",
-        )
-
-    manual_by_lang: dict[str, object] = {}
-    generated_by_lang: dict[str, object] = {}
-    for t in available:
-        lang = normalize_language_code(t.language_code)
-        if t.is_generated:
-            generated_by_lang.setdefault(lang, t)
-        else:
-            manual_by_lang.setdefault(lang, t)
-
-    pref_langs = [normalize_language_code(lc) for lc in settings.supported_languages]
-
-    # Tier 3: manual transcript in preferred language order
-    for lang in pref_langs:
-        if lang in manual_by_lang:
-            segments = _to_segments(manual_by_lang[lang])
-            logger.info("Selected transcript: lang=%s, source=manual, video=%s", lang, video_id)
-            return (segments, TranscriptSourceType.manual, lang)
-
-    # Tier 4: auto-generated transcript in preferred language order
-    for lang in pref_langs:
-        if lang in generated_by_lang:
-            segments = _to_segments(generated_by_lang[lang])
-            logger.info(
-                "Selected transcript: lang=%s, source=auto_generated, video=%s", lang, video_id
-            )
-            return (segments, TranscriptSourceType.auto_generated, lang)
-
-    # Fallback: first available manual, then generated
-    if manual_by_lang:
-        lang, t = next(iter(manual_by_lang.items()))
-        segments = _to_segments(t)
-        logger.info(
-            "Selected transcript: lang=%s, source=manual (fallback), video=%s", lang, video_id
-        )
-        return (segments, TranscriptSourceType.manual, lang)
-    if generated_by_lang:
-        lang, t = next(iter(generated_by_lang.items()))
-        segments = _to_segments(t)
-        logger.info(
-            "Selected transcript: lang=%s, source=auto_generated (fallback), video=%s",
-            lang,
-            video_id,
-        )
-        return (segments, TranscriptSourceType.auto_generated, lang)
-
-    return IngestionError(
-        error_code="NO_TRANSCRIPT",
-        message="No transcript or caption source is available for this video.",
-    )
 
 
 def _build_raw_text(segments: list[dict]) -> str:
@@ -461,7 +497,9 @@ async def ingest_video(
     detected_lang = _detect_language(metadata)
 
     # 5. Fetch transcript (accepts any language; see _fetch_transcript ranking).
-    transcript_result = _fetch_transcript(video_id)
+    # Offloaded to a worker thread: youtube-transcript-api is synchronous (built
+    # on requests) and proxy retries can take tens of seconds.
+    transcript_result = await asyncio.to_thread(_fetch_transcript, video_id)
     if isinstance(transcript_result, IngestionError):
         return IngestionResult(success=False, error=transcript_result)
 

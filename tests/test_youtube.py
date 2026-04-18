@@ -4,12 +4,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from youtube_transcript_api import NoTranscriptFound
+from pydantic import ValidationError
+from youtube_transcript_api import IpBlocked, NoTranscriptFound, RequestBlocked
 
+from app.config import Settings
 from app.models.db import TranscriptSourceType
 from app.models.schemas import IngestionError
 from app.services.youtube import (
     _build_raw_text,
+    _build_transcript_api,
     _detect_language,
     _fetch_metadata,
     _fetch_top_comments,
@@ -446,3 +449,170 @@ class TestFetchTranscriptEnglishVariants:
         assert not hasattr(result, "error_code"), f"Expected success, got {result}"
         _, _, lang = result
         assert lang == "en"
+
+
+# ---------------------------------------------------------------------------
+# Webshare proxy configuration
+# ---------------------------------------------------------------------------
+
+_SETTINGS_DEFAULTS = {
+    "app_secret_key": "test-secret-not-placeholder",
+    "youtube_api_key": "test-yt-api-key-not-real",
+}
+
+
+class TestWebshareSettings:
+    """Settings validation for Webshare proxy credentials."""
+
+    def test_neither_set_is_valid(self):
+        s = Settings(**_SETTINGS_DEFAULTS)
+        assert s.webshare_proxy_enabled is False
+
+    def test_both_set_is_valid(self):
+        s = Settings(
+            webshare_proxy_username="user",
+            webshare_proxy_password="pass",
+            **_SETTINGS_DEFAULTS,
+        )
+        assert s.webshare_proxy_enabled is True
+
+    def test_only_username_raises(self):
+        with pytest.raises(ValidationError, match="WEBSHARE_PROXY_PASSWORD"):
+            Settings(webshare_proxy_username="user", **_SETTINGS_DEFAULTS)
+
+    def test_only_password_raises(self):
+        with pytest.raises(ValidationError, match="WEBSHARE_PROXY_USERNAME"):
+            Settings(webshare_proxy_password="pass", **_SETTINGS_DEFAULTS)
+
+
+class TestBuildTranscriptApi:
+    """_build_transcript_api returns the right client depending on settings."""
+
+    def test_direct_when_no_creds(self):
+        """No Webshare creds -> vanilla YouTubeTranscriptApi (no proxy)."""
+        import app.services.youtube as yt_mod
+
+        fake = MagicMock()
+        fake.webshare_proxy_enabled = False
+        with patch.object(yt_mod, "settings", fake):
+            api = _build_transcript_api()
+        assert api._fetcher._proxy_config is None
+
+    def test_webshare_when_creds_set(self):
+        """Both Webshare creds -> WebshareProxyConfig attached."""
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+
+        import app.services.youtube as yt_mod
+
+        fake = MagicMock()
+        fake.webshare_proxy_enabled = True
+        fake.webshare_proxy_username = "u"
+        fake.webshare_proxy_password = "p"
+        with patch.object(yt_mod, "settings", fake):
+            api = _build_transcript_api()
+        assert isinstance(api._fetcher._proxy_config, WebshareProxyConfig)
+
+
+# ---------------------------------------------------------------------------
+# IP-block error mapping
+# ---------------------------------------------------------------------------
+
+
+class TestIpBlockErrorMapping:
+    """RequestBlocked / IpBlocked map to TRANSCRIPT_IP_BLOCKED in both network phases."""
+
+    @patch("app.services.youtube._build_transcript_api")
+    def test_request_blocked_on_list(self, mock_build):
+        mock_build.return_value.list.side_effect = RequestBlocked("FAKE_ID")
+        result = _fetch_transcript("FAKE_ID")
+        assert isinstance(result, IngestionError)
+        assert result.error_code == "TRANSCRIPT_IP_BLOCKED"
+        assert result.recoverable is True
+
+    @patch("app.services.youtube._build_transcript_api")
+    def test_ip_blocked_on_list(self, mock_build):
+        mock_build.return_value.list.side_effect = IpBlocked("FAKE_ID")
+        result = _fetch_transcript("FAKE_ID")
+        assert isinstance(result, IngestionError)
+        assert result.error_code == "TRANSCRIPT_IP_BLOCKED"
+        assert result.recoverable is True
+
+    @patch("app.services.youtube._build_transcript_api")
+    def test_request_blocked_on_fetch(self, mock_build):
+        """IP block during transcript.fetch() (inside _to_segments) is also caught."""
+        t_en = _make_transcript("en", is_generated=False)
+        t_en.fetch.side_effect = RequestBlocked("FAKE_ID")
+
+        transcript_list = MagicMock()
+        transcript_list.find_manually_created_transcript.return_value = t_en
+        mock_build.return_value.list.return_value = transcript_list
+
+        result = _fetch_transcript("FAKE_ID")
+        assert isinstance(result, IngestionError)
+        assert result.error_code == "TRANSCRIPT_IP_BLOCKED"
+
+    @patch("app.services.youtube._build_transcript_api")
+    def test_generic_exception_on_fetch_returns_fetch_failed(self, mock_build):
+        """A non-IP-block exception during transcript.fetch() returns TRANSCRIPT_FETCH_FAILED."""
+        t_en = _make_transcript("en", is_generated=False)
+        t_en.fetch.side_effect = RuntimeError("network timeout")
+
+        transcript_list = MagicMock()
+        transcript_list.find_manually_created_transcript.return_value = t_en
+        mock_build.return_value.list.return_value = transcript_list
+
+        result = _fetch_transcript("FAKE_ID")
+        assert isinstance(result, IngestionError)
+        assert result.error_code == "TRANSCRIPT_FETCH_FAILED"
+        assert result.recoverable is True
+
+
+# ---------------------------------------------------------------------------
+# asyncio.to_thread offload
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncOffload:
+    """ingest_video offloads _fetch_transcript to a worker thread."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_transcript_runs_in_thread(self):
+        with (
+            patch("app.services.youtube.extract_video_id", return_value="FAKE_ID"),
+            patch(
+                "app.services.youtube._get_cached_video", new_callable=AsyncMock, return_value=None
+            ),
+            patch("app.services.youtube._fetch_metadata", new_callable=AsyncMock) as mock_meta,
+            patch(
+                "app.services.youtube.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_to_thread,
+        ):
+            mock_meta.return_value = {
+                "title": "T",
+                "description": "",
+                "thumbnail": None,
+                "channel": "C",
+                "channel_url": None,
+                "upload_date": None,
+                "duration": 60,
+                "view_count": None,
+                "like_count": None,
+                "tags": [],
+                "category": None,
+                "language": "en",
+            }
+            mock_to_thread.return_value = IngestionError(
+                error_code="TRANSCRIPT_FETCH_FAILED",
+                message="test",
+                recoverable=True,
+            )
+
+            from app.services.youtube import _fetch_transcript, ingest_video
+
+            session = AsyncMock()
+            await ingest_video("https://youtube.com/watch?v=FAKE_ID", session)
+
+            mock_to_thread.assert_awaited_once()
+            args = mock_to_thread.call_args.args
+            assert args[0] is _fetch_transcript
+            assert args[1] == "FAKE_ID"

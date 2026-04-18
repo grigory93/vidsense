@@ -195,6 +195,8 @@ LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 ```
 
+> **EC2 is a cloud VM:** YouTube blocks unauthenticated transcript requests from AWS IP ranges. After the minimum settings above, also add `WEBSHARE_PROXY_USERNAME` and `WEBSHARE_PROXY_PASSWORD` to route transcript fetches through a residential proxy. See [Transcript fetching on cloud VMs](deployment.md#transcript-fetching-on-cloud-vms) for which plan to buy, where to find the credentials, and a pre-restart verification command.
+
 **Do not** paste secrets in the shell where history is recorded. Use `nano`
 or `vi` directly. After editing, verify permissions:
 
@@ -228,6 +230,7 @@ common causes are:
 - `APP_SECRET_KEY` still set to the default placeholder
 - Missing or invalid `YOUTUBE_API_KEY` (the app validates it at startup)
 - Missing or wrong `OPENAI_API_KEY` / other provider key
+- `WEBSHARE_PROXY_USERNAME` set without `WEBSHARE_PROXY_PASSWORD` (or vice versa) — the app rejects this half-configured state at startup with a clear error
 - Python import error (check `journalctl`)
 
 ---
