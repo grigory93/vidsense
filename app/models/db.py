@@ -48,7 +48,10 @@ class Video(Base):
     channel_name: Mapped[str | None] = mapped_column(String(256))
     channel_url: Mapped[str | None] = mapped_column(String(512))
     description: Mapped[str | None] = mapped_column(Text)
-    upload_date: Mapped[str | None] = mapped_column(String(20))
+    # 32 chars (not 20) to accommodate millisecond-precision publishedAt values
+    # like "2024-06-15T10:30:00.123Z" that YouTube has historically returned.
+    # Bare ISO 8601 ("YYYY-MM-DDTHH:MM:SSZ") is exactly 20 chars with no slack.
+    upload_date: Mapped[str | None] = mapped_column(String(32))
     view_count: Mapped[int | None] = mapped_column(Integer)
     like_count: Mapped[int | None] = mapped_column(Integer)
     tags_json: Mapped[str | None] = mapped_column(Text)

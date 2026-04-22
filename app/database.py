@@ -45,7 +45,7 @@ async def _add_missing_columns(conn) -> None:
         ("videos", "channel_name", "VARCHAR(256)"),
         ("videos", "channel_url", "VARCHAR(512)"),
         ("videos", "description", "TEXT"),
-        ("videos", "upload_date", "VARCHAR(20)"),
+        ("videos", "upload_date", "VARCHAR(32)"),
         ("videos", "view_count", "INTEGER"),
         ("videos", "like_count", "INTEGER"),
         ("videos", "tags_json", "TEXT"),
