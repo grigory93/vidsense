@@ -92,6 +92,20 @@ curl --proxy-user "${WEBSHARE_PROXY_USERNAME}-rotate:${WEBSHARE_PROXY_PASSWORD}"
 
 A successful response prints a residential-looking IP that is *not* the VM's own IP. If `curl` hangs, returns a 407, or prints the VM's IP, the credentials or plan type are wrong — fix that before restarting the service.
 
+## Schema migrations
+
+VidSense uses SQLite by default and applies additive schema changes at startup via `_add_missing_columns` in [`app/database.py`](../app/database.py). SQLite ignores `VARCHAR(n)` widths, so column-width changes on the default deployment are no-ops and need no manual step.
+
+**Non-SQLite deployments (Postgres, MySQL, etc.)** enforce declared column widths and do not pick up width changes from `_add_missing_columns` (it only handles missing columns). If you operate such a deployment, run the following migration before restarting on a version that includes issue #23:
+
+```sql
+-- videos.upload_date widened from VARCHAR(20) to VARCHAR(32) to accommodate
+-- millisecond-precision YouTube publishedAt values (e.g. "2024-06-15T10:30:00.123Z").
+ALTER TABLE videos ALTER COLUMN upload_date TYPE VARCHAR(32);
+```
+
+The change is backwards-compatible: existing 20-char values continue to fit, and no data migration is needed.
+
 ## Deployment files
 
 | File | Purpose |

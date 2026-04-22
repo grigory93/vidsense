@@ -110,6 +110,19 @@ class TestParseIso8601Duration:
     def test_none_input(self):
         assert _parse_iso8601_duration(None) is None
 
+    def test_bare_p_returns_none(self):
+        # "P" alone has no components — must not silently parse to 0.
+        assert _parse_iso8601_duration("P") is None
+
+    def test_bare_pt_returns_none(self):
+        # "PT" has the time designator but no components — must be None.
+        assert _parse_iso8601_duration("PT") is None
+
+    def test_hour_without_t_designator_returns_none(self):
+        # "P1H" is not valid ISO 8601 (missing T). Previously the loose regex
+        # treated the T as optional and this parsed to 3600 seconds.
+        assert _parse_iso8601_duration("P1H") is None
+
 
 # ---------------------------------------------------------------------------
 # Language detection (updated for API v3 field names)
@@ -318,7 +331,7 @@ class TestFetchTopComments:
         assert result[0]["text"] == "Great video!"
 
     @pytest.mark.asyncio
-    async def test_comments_disabled_returns_none(self):
+    async def test_comments_disabled_returns_none(self, caplog):
         error_resp = httpx.Response(
             status_code=403,
             json={"error": {"errors": [{"reason": "commentsDisabled"}]}},
@@ -330,9 +343,54 @@ class TestFetchTopComments:
             mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            result = await _fetch_top_comments("no_comments")
+            with caplog.at_level("WARNING", logger="app.services.youtube"):
+                result = await _fetch_top_comments("no_comments")
 
         assert result is None
+        # 403 is the "silent" commentsDisabled case — must not log at WARNING.
+        assert not [r for r in caplog.records if r.name == "app.services.youtube"], (
+            "403 commentsDisabled should not produce a WARNING"
+        )
+
+    @pytest.mark.asyncio
+    async def test_server_error_logs_warning(self, caplog):
+        # Non-403 HTTP errors (quota key misconfig, 5xx, rate-limit, etc.)
+        # should surface as WARNING so operators can see them in journald.
+        error_resp = httpx.Response(
+            status_code=500,
+            json={"error": {"message": "internal error"}},
+            request=httpx.Request("GET", "https://test"),
+        )
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=error_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            with caplog.at_level("WARNING", logger="app.services.youtube"):
+                result = await _fetch_top_comments("boom_id")
+
+        assert result is None
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert warnings, "Non-403 HTTP errors must emit a WARNING"
+        assert "500" in warnings[0].getMessage()
+        assert "boom_id" in warnings[0].getMessage()
+
+    @pytest.mark.asyncio
+    async def test_network_error_logs_warning(self, caplog):
+        with patch("app.services.youtube.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("down"))
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            with caplog.at_level("WARNING", logger="app.services.youtube"):
+                result = await _fetch_top_comments("net_fail")
+
+        assert result is None
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert warnings, "Network errors must emit a WARNING"
+        assert "net_fail" in warnings[0].getMessage()
 
     @pytest.mark.asyncio
     async def test_truncates_long_comments(self):

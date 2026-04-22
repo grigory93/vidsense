@@ -128,7 +128,10 @@ _CATEGORY_MAP: dict[str, str] = {
     "44": "Trailers",
 }
 
-_ISO_DURATION_RE = re.compile(r"^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
+# Require the T designator before any time component and reject matches where no
+# component captured at all, so malformed inputs like "P", "PT", or "P1H"
+# (missing T) fall through to None instead of silently parsing to 0.
+_ISO_DURATION_RE = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$")
 
 
 def _parse_iso8601_duration(iso_str: str) -> int | None:
@@ -136,7 +139,7 @@ def _parse_iso8601_duration(iso_str: str) -> int | None:
     if not iso_str:
         return None
     m = _ISO_DURATION_RE.match(iso_str)
-    if not m:
+    if not m or not any(m.groups()):
         return None
     days = int(m.group(1) or 0)
     hours = int(m.group(2) or 0)
@@ -245,8 +248,28 @@ async def _fetch_top_comments(video_id: str) -> list[dict[str, str]] | None:
             resp = await client.get(f"{_YT_API_BASE}/commentThreads", params=params)
             resp.raise_for_status()
             data = resp.json()
-    except Exception:
-        logger.debug("Comments fetch failed for video %s (best-effort, skipping)", video_id)
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        # 403 is the documented "commentsDisabled" path for this endpoint —
+        # genuinely silent and expected. All other statuses (401/404/429/5xx)
+        # indicate misconfiguration, quota exhaustion, or infrastructure issues
+        # that operators need to see in journald even though the UX stays
+        # best-effort.
+        if status == 403:
+            logger.debug("Comments disabled for video %s, skipping", video_id)
+        else:
+            logger.warning(
+                "Comments fetch HTTP %d for video %s (best-effort, skipping)",
+                status,
+                video_id,
+            )
+        return None
+    except Exception as exc:
+        logger.warning(
+            "Comments fetch failed for video %s (best-effort, skipping): %s",
+            video_id,
+            exc,
+        )
         return None
 
     comments: list[dict[str, str]] = []
@@ -510,6 +533,17 @@ async def ingest_video(
     comments = await _fetch_top_comments(video_id)
 
     # 7. Persist
+    #
+    # Cache-hit backfill behaviour (intentional, not a bug):
+    # If `existing_video` is set we reuse it verbatim and do NOT copy any
+    # freshly-fetched fields (upload_date, tags, comments, category, ...) onto
+    # it. This path is only reached for legacy yt-dlp rows whose transcript was
+    # evicted — their `upload_date` keeps the old `YYYYMMDD` shape and
+    # tags_json / top_comments_json / category stay NULL. Templates and prompts
+    # already tolerate NULL here; see the "Risks" section of the YouTube API
+    # migration plan. If we ever want to backfill these columns on re-ingest,
+    # do it behind an explicit settings flag rather than silently overwriting
+    # cached rows.
     tags = metadata.get("tags", [])
     video = existing_video or Video(
         youtube_id=video_id,
