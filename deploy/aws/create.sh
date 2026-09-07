@@ -89,19 +89,21 @@ ensure_ingress 443 "0.0.0.0/0" "HTTPS-public"
 # the public half so the same .pem still logs you in after recreate.
 if [[ -f "${KEY_PAIR_FILE}" ]]; then
     log "Using existing local key ${KEY_PAIR_FILE} (will not overwrite)."
-    PUB_MATERIAL="$(ssh-keygen -y -f "${KEY_PAIR_FILE}")" \
-        || die "Could not read public key from ${KEY_PAIR_FILE}."
+    PUB_TMP="$(mktemp)"
+    ssh-keygen -y -f "${KEY_PAIR_FILE}" > "${PUB_TMP}" \
+        || { rm -f "${PUB_TMP}"; die "Could not read public key from ${KEY_PAIR_FILE}."; }
     if awsr "${REGION}" ec2 describe-key-pairs --key-names "${KEY_PAIR_NAME}" >/dev/null 2>&1; then
         log "AWS already has key pair ${KEY_PAIR_NAME}; attaching it to the new instance."
     else
         log "AWS is missing ${KEY_PAIR_NAME}; importing the public key from ${KEY_PAIR_FILE}..."
         awsr "${REGION}" ec2 import-key-pair \
             --key-name "${KEY_PAIR_NAME}" \
-            --public-key-material "${PUB_MATERIAL}" \
+            --public-key-material "fileb://${PUB_TMP}" \
             --tag-specifications "ResourceType=key-pair,Tags=[{Key=Project,Value=${PROJECT_TAG}}]" \
             >/dev/null
         log "  imported. The same IdentityFile still works."
     fi
+    rm -f "${PUB_TMP}"
 elif awsr "${REGION}" ec2 describe-key-pairs --key-names "${KEY_PAIR_NAME}" >/dev/null 2>&1; then
     die "Key pair ${KEY_PAIR_NAME} exists in AWS but ${KEY_PAIR_FILE} is missing locally. Restore the original .pem (do not create a new pair) and retry."
 else
