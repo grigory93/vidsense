@@ -201,7 +201,8 @@ deploy/aws/create.sh
 ```
 
 Idempotent. Reuses an instance / EIP / SG if one already matches
-`Project=vidsense` or `INSTANCE_NAME`. Creates:
+`Project=vidsense` or `INSTANCE_NAME`. A matching stopped (or stopping)
+instance is started and waited on before SSH/bootstrap. Creates:
 
 1. Security group in the **default VPC** (22 from `SSH_INGRESS_CIDR`, 80/443
    from anywhere)

@@ -115,6 +115,41 @@ fi
 # ---------------------------------------------------------------------------
 # 3. EC2 instance (reuse a running/stopped instance if present)
 # ---------------------------------------------------------------------------
+# A reused stopped/stopping instance must be started before SSH/bootstrap.
+# start-instances is rejected while the instance is still stopping, so wait
+# for stopped first in that case.
+ensure_instance_running() {
+    local instance_id="$1"
+    local state
+    state="$(awsr "${REGION}" ec2 describe-instances \
+        --instance-ids "${instance_id}" \
+        --query 'Reservations[0].Instances[0].State.Name' --output text)"
+    case "${state}" in
+        running)
+            log "  instance ${instance_id} already running."
+            return 0
+            ;;
+        pending)
+            ;;
+        stopping)
+            log "  instance ${instance_id} is stopping; waiting until stopped..."
+            awsr "${REGION}" ec2 wait instance-stopped --instance-ids "${instance_id}"
+            state="stopped"
+            ;;
+        stopped)
+            ;;
+        *)
+            die "Instance ${instance_id} is in state '${state}'; cannot reuse."
+            ;;
+    esac
+    if [[ "${state}" == "stopped" ]]; then
+        log "  instance ${instance_id} is stopped; starting..."
+        awsr "${REGION}" ec2 start-instances --instance-ids "${instance_id}" >/dev/null
+    fi
+    log "  instance ${instance_id} waiting until running..."
+    awsr "${REGION}" ec2 wait instance-running --instance-ids "${instance_id}"
+}
+
 # Prefer Project+Name (what this script creates). Fall back to Name alone so
 # a console-launched VM (the current live box has no Project tag) is reused
 # instead of launching a second instance.
@@ -137,6 +172,7 @@ fi
 
 if [[ "${INSTANCE_ID}" != "None" && -n "${INSTANCE_ID}" ]]; then
     log "Reusing existing instance ${INSTANCE_ID} (${INSTANCE_NAME})."
+    ensure_instance_running "${INSTANCE_ID}"
 else
     log "Looking up latest Ubuntu AMI (${AMI_NAME_PATTERN})..."
     AMI_ID="$(awsr "${REGION}" ec2 describe-images \
