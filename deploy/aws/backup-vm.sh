@@ -57,12 +57,25 @@ remote "sudo test -f /opt/vidsense/.env" \
 remote "sudo test -f /etc/caddy/Caddyfile" \
     || die "/etc/caddy/Caddyfile missing on the VM."
 
+# Stop the app so SQLite WAL is checkpointed before we archive. Restart
+# afterward so a backup-without-destroy still leaves the site up.
+log "Stopping vidsense for a consistent SQLite snapshot..."
+remote "sudo systemctl stop vidsense" \
+    || die "Could not stop vidsense; refusing to snapshot a live database."
+
 log "Archiving /opt/vidsense/data, /opt/vidsense/.env, /etc/caddy/Caddyfile..."
-remote "sudo tar czf /tmp/vidsense-backup.tar.gz -C / \
+TAR_OK=0
+if remote "sudo tar czf /tmp/vidsense-backup.tar.gz -C / \
     opt/vidsense/data \
     opt/vidsense/.env \
     etc/caddy/Caddyfile \
-    && sudo chmod 644 /tmp/vidsense-backup.tar.gz"
+    && sudo chmod 644 /tmp/vidsense-backup.tar.gz"; then
+    TAR_OK=1
+fi
+
+remote "sudo systemctl start vidsense" \
+    || warn "Could not restart vidsense after backup."
+[[ ${TAR_OK} -eq 1 ]] || die "Remote archive failed."
 
 log "Downloading tarball..."
 scp "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_HOST}:/tmp/vidsense-backup.tar.gz" "${STAGE}/payload.tar.gz"
