@@ -61,17 +61,19 @@ else
     tag_project "${REGION}" "${SG_ID}"
 fi
 
-# Idempotently ensure inbound rules. authorize-* errors with
-# InvalidPermission.Duplicate if the rule exists, which we swallow.
+# Idempotently ensure inbound rules. Only a Duplicate error means the rule
+# is already present; auth, CIDR, and API failures must abort create.
 ensure_ingress() {
-    local port="$1" cidr="$2" desc="$3"
-    if awsr "${REGION}" ec2 authorize-security-group-ingress \
+    local port="$1" cidr="$2" desc="$3" err
+    if err="$(awsr "${REGION}" ec2 authorize-security-group-ingress \
         --group-id "${SG_ID}" \
         --ip-permissions "IpProtocol=tcp,FromPort=${port},ToPort=${port},IpRanges=[{CidrIp=${cidr},Description=${desc}}]" \
-        >/dev/null 2>&1; then
+        2>&1)"; then
         log "  opened tcp/${port} from ${cidr}."
+    elif [[ "${err}" == *InvalidPermission.Duplicate* ]]; then
+        log "  tcp/${port} from ${cidr} already present — ok."
     else
-        log "  tcp/${port} from ${cidr} already present (or duplicate) — ok."
+        die "Failed to open tcp/${port} from ${cidr}: ${err}"
     fi
 }
 ensure_ingress 22 "${SSH_INGRESS_CIDR}" "SSH-admin-and-deploy"
