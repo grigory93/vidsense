@@ -12,7 +12,7 @@
 # Usage:
 #   deploy/aws/restore-vm.sh [--start] [archive] [ssh-host] [ssh-user] [ssh-key]
 #
-#   --start   Reload Caddy and start systemd vidsense after restoring files.
+#   --start   Reload Caddy and restart systemd vidsense after restoring files.
 #   archive   Defaults to the newest deploy/aws/backups/vidsense-vm-*.tar.gz
 #   ssh-host  Defaults to DOMAIN (vidsense.info). Prefer the new Elastic IP
 #             printed by create.sh — DNS TTL is 300s.
@@ -100,14 +100,14 @@ else
 fi
 
 if [[ ${START} -eq 1 ]]; then
-    log "Reloading Caddy and starting vidsense..."
-    remote "sudo systemctl reload caddy && sudo systemctl start vidsense"
+    log "Reloading Caddy and restarting vidsense..."
+    remote "sudo systemctl reload caddy && sudo systemctl restart vidsense"
     remote "sudo systemctl --no-pager --full is-active caddy vidsense" || \
         warn "A service is not active. Check: sudo journalctl -u vidsense -u caddy -e"
 else
     echo ""
     echo "Files restored. Start the app when ready:"
-    echo "  ssh -i ${SSH_KEY} ${SSH_USER}@${SSH_HOST} 'sudo systemctl reload caddy && sudo systemctl start vidsense'"
+    echo "  ssh -i ${SSH_KEY} ${SSH_USER}@${SSH_HOST} 'sudo systemctl reload caddy && sudo systemctl restart vidsense'"
 fi
 
 log "Restore complete."
