@@ -34,6 +34,12 @@ vidsense.db
 *.local
 logs/
 
+# AWS infra scripts — local-only outputs and filled-in config (contain
+# account IDs, IPs, and secrets from the VM). Templates stay tracked.
+deploy/aws/config.env
+deploy/aws/inventory/
+deploy/aws/backups/
+
 # IDE
 .idea/
 .vscode/

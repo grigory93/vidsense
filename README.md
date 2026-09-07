@@ -150,6 +150,9 @@ Tests live under `tests/` (e.g. `test_api.py`, `test_graph.py`, `test_schemas.py
 
 Run behind TLS and a reverse proxy; templates live in `deploy/`. Full checklist, access-control notes, and file references: **[docs/deployment.md](docs/deployment.md)**.
 
+To freeze the AWS VM (stop compute spend) and recreate it later, use
+**[deploy/aws/README.md](deploy/aws/README.md)**.
+
 ---
 
 ## License
