@@ -33,7 +33,10 @@ SSH_KEY="${3:-${KEY_PAIR_FILE:-}}"
 SSH_KEY="${SSH_KEY/#\~/${HOME}}"
 [[ -n "${SSH_KEY}" && -f "${SSH_KEY}" ]] || die "SSH key not found: ${SSH_KEY:-<empty>}"
 
-SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -i "${SSH_KEY}")
+# BatchMode avoids hanging on password prompts. accept-new records an unknown
+# host (e.g. first SSH to vidsense.info) so the freeze backup can start;
+# changed keys still fail.
+SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i "${SSH_KEY}")
 
 BACKUP_DIR="${AWS_DIR}/backups"
 mkdir -p "${BACKUP_DIR}"
