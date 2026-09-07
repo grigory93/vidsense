@@ -353,3 +353,4 @@ sudo journalctl -u vidsense --since "1 hour ago" > /tmp/vidsense-journal.log
 - systemd unit template: [deploy/vidsense.service](../deploy/vidsense.service)
 - Bootstrap script: [deploy/bootstrap.sh](../deploy/bootstrap.sh)
 - Environment template: [.env.example](../.env.example)
+- Freeze / recreate scripts: [deploy/aws/README.md](../deploy/aws/README.md)

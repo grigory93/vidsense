@@ -1,14 +1,19 @@
 name: Deploy
 
 # Triggers:
-#   - push to main: auto-deploy merged PRs to dev (the `ci` job below re-runs
-#     lint+tests on the merge commit as a last-mile gate before SSHing to the
-#     VM, since PR CI ran on the PR head, not on post-merge main).
+#   - push to main: auto-deploy merged PRs to dev — DISABLED while the AWS VM is
+#     frozen (see docs/aws-infra.md). When live, the `ci` job below re-runs
+#     lint+tests on the merge commit as a last-mile gate before SSHing to the VM
+#     (PR CI ran on the PR head, not on post-merge main). Re-enable in `on:`.
 #   - workflow_dispatch: manual redeploy / ad-hoc branch deploy to dev. Useful
 #     for redeploying after a VM config change without forcing an empty commit.
 on:
-  push:
-    branches: [main]
+  # FROZEN: auto-deploy on push is disabled while the AWS VM is torn down (see
+  # docs/aws-infra.md). With no live SSH_HOST, every `main` push would fail here.
+  # Re-enable by uncommenting the two lines below after running
+  # deploy/aws/create.sh and resetting the `dev` SSH_* secrets.
+  #  push:
+  #    branches: [main]
   workflow_dispatch:
     inputs:
       environment:

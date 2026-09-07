@@ -89,3 +89,11 @@ Jinja2 templates in `app/templates/`. Full-page loads for `/` and `/video/{id}`;
 Copy `.env.example` to `.env`. The app refuses to start without `APP_SECRET_KEY` (non-default) and `YOUTUBE_API_KEY`. `APP_ALLOWED_HOSTS` must include the production domain. `APP_DEBUG=false` disables `/docs` and `/openapi.json` in production.
 
 Optional: `WEBSHARE_PROXY_USERNAME` / `WEBSHARE_PROXY_PASSWORD` for cloud VM deployments where YouTube blocks direct requests (see `docs/deployment.md`). `YOUTUBE_MAX_COMMENTS` (default 20) and `YOUTUBE_MAX_COMMENT_CHARS` (default 300) tune comment ingestion volume.
+
+## AWS freeze / recreate
+
+Operational scripts live in `deploy/aws/`. Before scanning, backing up,
+destroying, or recreating AWS resources, read **`deploy/aws/README.md`**
+and follow its agent playbook. Do not invent a new VPC or IaC stack.
+Never run `destroy.sh` without a verified `backup-vm.sh` tarball copied
+outside the repo. Never print `.env` values or private keys.
