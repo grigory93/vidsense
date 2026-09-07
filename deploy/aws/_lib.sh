@@ -29,7 +29,13 @@ load_config() {
         log "Loaded config from ${cfg}"
     fi
     # Export so the aws wrapper and child processes pick them up.
-    [[ -n "${AWS_PROFILE:-}" ]] && export AWS_PROFILE
+    # An empty AWS_PROFILE= in config.env would otherwise be exported by
+    # `set -a` and make the CLI ignore the default SSO chain.
+    if [[ -n "${AWS_PROFILE:-}" ]]; then
+        export AWS_PROFILE
+    else
+        unset AWS_PROFILE
+    fi
     [[ -n "${AWS_REGION:-}" ]] && export AWS_REGION
     PROJECT_TAG="${PROJECT_TAG:-vidsense}"
 }
